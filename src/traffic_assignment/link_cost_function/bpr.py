@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .link_cost_function import LinkCostFunction
+from .base import LinkCostFunction
 
 
 @dataclass(frozen=True)

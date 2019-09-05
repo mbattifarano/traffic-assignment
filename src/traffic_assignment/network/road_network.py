@@ -24,6 +24,10 @@ class Network(ABC):
         pass
 
     @abstractmethod
+    def has_path(self, origin: Node, destination: Node) -> bool:
+        pass
+
+    @abstractmethod
     def shortest_path_assignment(self, demand: Demand, travel_costs: np.ndarray) -> np.ndarray:
         pass
 
@@ -46,11 +50,24 @@ class RoadNetwork(Network):
 
     def shortest_path_assignment(self, demand: Demand, travel_costs: np.ndarray) -> np.ndarray:
         self._set_link_costs(travel_costs)
-        path = Path(nx.shortest_path(self.graph,
-                                     demand.origin.name,
-                                     demand.destination.name,
-                                     weight=self.WEIGHT_KEY))
+        path = self._shortest_path(demand.origin, demand.destination)
         return self._assign_path_flow_to_links(path, demand.volume)
+
+    def _shortest_path(self, origin: Node, destination: Node) -> Path:
+        return Path(nx.shortest_path(
+            self.graph,
+            origin.name,
+            destination.name,
+            weight=self.WEIGHT_KEY,
+        ))
+
+    def has_path(self, origin: Node, destination: Node) -> bool:
+        try:
+            self._shortest_path(origin, destination)
+        except nx.NetworkXNoPath:
+            return False
+        else:
+            return True
 
     def _get_node(self, name: str) -> Node:
         return self.graph.nodes[name][self.NODE_KEY]

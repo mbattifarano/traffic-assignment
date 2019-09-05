@@ -19,7 +19,7 @@ random_network = builds(RoadNetwork, random_graph)
 @composite
 def random_network_with_demand(draw):
     network = draw(random_network)
-    volume = floats(min_value=0)
+    volume = floats(min_value=1.0)
     nodes = sampled_from(network.nodes)
     demand = draw(builds(Demand, nodes, nodes, volume))
     return network, demand
@@ -63,6 +63,23 @@ def test_road_network_links(road_network: RoadNetwork):
         assert road_network.graph.edges[u, v]['link'] is link
 
 
+def find_next(links, node):
+    for link in links:
+        if link.origin == node:
+            return link
+
+
+def has_path(network, link_flow, demand):
+    link_indices = np.argwhere(link_flow > 0.0).flatten()
+    links = set(network.links[i] for i in link_indices)
+    node = demand.origin
+    while links and node != demand.destination:
+        link = find_next(links, node)
+        links.remove(link)
+        node = link.destination
+    return node == demand.destination
+
+
 @given(random_network_with_demand_and_travel_cost())
 def test_shortest_path_assignment(data):
     network, demand, travel_cost = data
@@ -87,9 +104,11 @@ def test_shortest_path_assignment(data):
             # if the path is the entire network, then all links should have
             # the same flow
             assert set(link_flow) == {demand.volume}
+            assert has_path(network, link_flow, demand)
         else:
             # the normal scenario: each link has 0 flow or flow equal to volume
             assert set(link_flow) == {0, demand.volume}
+            assert has_path(network, link_flow, demand)
     else:
         # If there is no path, an exception will be raised.
         with pytest.raises(nx.NetworkXNoPath):
