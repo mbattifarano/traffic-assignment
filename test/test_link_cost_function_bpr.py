@@ -1,9 +1,11 @@
-from traffic_assignment.link_cost_function.bpr import BPRLinkCostFunction
+from traffic_assignment.link_cost_function.bpr import (
+    BPRLinkCostFunction, BPRMarginalLinkCostFunction
+)
 
 import numpy as np
 
 from hypothesis import given
-from hypothesis.strategies import builds, tuples, floats, integers
+from hypothesis.strategies import builds, tuples, floats, integers, one_of, none
 from hypothesis.extra.numpy import arrays
 
 
@@ -27,6 +29,20 @@ link_cost_link_flow_pairs = number_of_links.flatmap(
     )
 )
 
+marginal_link_cost_link_flow_pairs = number_of_links.flatmap(
+    lambda n: tuples(
+        builds(BPRMarginalLinkCostFunction,
+               link_vector_of(n, non_negative_floats),
+               link_vector_of(n, positive_floats),
+               fleet_link_flow=one_of(
+                   none(),
+                   link_vector_of(n, non_negative_floats)
+               ),
+        ),
+        link_vector_of(n, non_negative_floats),
+    )
+)
+
 
 @given(link_cost_link_flow_pairs)
 def test_bpr_link_cost_function(link_cost_link_flow_pair):
@@ -38,3 +54,11 @@ def test_bpr_link_cost_function(link_cost_link_flow_pair):
     adjusted_occupancy = 0.15 * (occupancy ** 4)
     expected_cost = bpr.free_flow_travel_time * (1 + adjusted_occupancy)
     assert np.allclose(actual_cost, expected_cost)
+
+
+@given(marginal_link_cost_link_flow_pairs)
+def test_bpr_marginal_link_cost_function(link_cost_link_flow_pair):
+    marginal_bpr, link_flow = link_cost_link_flow_pair
+    actual_cost = marginal_bpr.link_cost(link_flow)
+    assert actual_cost.shape == link_flow.shape
+    assert (actual_cost >= 0).all()
