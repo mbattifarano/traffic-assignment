@@ -12,7 +12,7 @@ from hypothesis.extra.numpy import arrays
 
 paths = builds(Path, lists(integers()))
 random_graph = builds(nx.generators.gn_graph, integers(min_value=1,
-                                                       max_value=1000))
+                                                       max_value=100))
 random_network = builds(RoadNetwork, random_graph)
 
 
