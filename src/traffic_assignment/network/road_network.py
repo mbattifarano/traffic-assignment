@@ -28,7 +28,8 @@ class Network(ABC):
         pass
 
     @abstractmethod
-    def shortest_path_assignment(self, demand: Demand, travel_costs: np.ndarray) -> np.ndarray:
+    def shortest_path_assignment(self, demand: Demand,
+                                 travel_costs: np.ndarray) -> np.ndarray:
         pass
 
 
@@ -48,7 +49,8 @@ class RoadNetwork(Network):
     def number_of_nodes(self) -> int:
         return len(self.nodes)
 
-    def shortest_path_assignment(self, demand: Demand, travel_costs: np.ndarray) -> np.ndarray:
+    def shortest_path_assignment(self, demand: Demand,
+                                 travel_costs: np.ndarray) -> np.ndarray:
         self._set_link_costs(travel_costs)
         path = self._shortest_path(demand.origin, demand.destination)
         return self._assign_path_flow_to_links(path, demand.volume)

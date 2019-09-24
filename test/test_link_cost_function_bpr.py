@@ -8,11 +8,10 @@ from hypothesis import given
 from hypothesis.strategies import builds, tuples, floats, integers, one_of, none
 from hypothesis.extra.numpy import arrays
 
-
-number_of_links = integers(min_value=1, max_value=2**16)
-non_negative_floats = floats(min_value=0.0, max_value=2**16,
+number_of_links = integers(min_value=1, max_value=2 ** 16)
+non_negative_floats = floats(min_value=0.0, max_value=2 ** 16,
                              allow_infinity=False, allow_nan=False)
-positive_floats = floats(min_value=0.1, max_value=2**16,
+positive_floats = floats(min_value=0.1, max_value=2 ** 16,
                          allow_infinity=False, allow_nan=False)
 
 
@@ -31,13 +30,14 @@ link_cost_link_flow_pairs = number_of_links.flatmap(
 
 marginal_link_cost_link_flow_pairs = number_of_links.flatmap(
     lambda n: tuples(
-        builds(BPRMarginalLinkCostFunction,
-               link_vector_of(n, non_negative_floats),
-               link_vector_of(n, positive_floats),
-               fleet_link_flow=one_of(
-                   none(),
-                   link_vector_of(n, non_negative_floats)
-               ),
+        builds(
+            BPRMarginalLinkCostFunction,
+            link_vector_of(n, non_negative_floats),
+            link_vector_of(n, positive_floats),
+            fleet_link_flow=one_of(
+                none(),
+                link_vector_of(n, non_negative_floats)
+            ),
         ),
         link_vector_of(n, non_negative_floats),
     )

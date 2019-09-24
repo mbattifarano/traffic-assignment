@@ -16,4 +16,5 @@ setup(
     packages=find_packages('src'),
     test_requires=read_requirements('test.txt'),
     install_requires=read_requirements('install.txt'),
+    python_requires=">=3.7",
 )

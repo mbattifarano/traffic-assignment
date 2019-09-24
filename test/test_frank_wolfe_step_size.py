@@ -1,14 +1,14 @@
 from hypothesis import given, example
 from hypothesis.strategies import integers
 
-from traffic_assignment.frank_wolfe import step_size
+from traffic_assignment.frank_wolfe.step_size import MonotoneDecreasingStepSize
 
 
 @given(integers(min_value=0))
 @example(0)
 @example(2)
 def test_monotone_decreasing_step_size(k):
-    step = step_size.MonotoneDecreasingStepSize()
+    step = MonotoneDecreasingStepSize()
     actual_step = step.step(k)
     expected_step = 2 / (k+2)
     assert actual_step == expected_step
@@ -23,7 +23,7 @@ def test_monotone_decreasing_step_size(k):
 @given(integers(min_value=0), integers(min_value=0))
 def test_monotone_decreasing_step_size_pairs(j, k):
     j, k = sorted([j, k])
-    step = step_size.MonotoneDecreasingStepSize()
+    step = MonotoneDecreasingStepSize()
     step_j = step.step(j)
     assert 0 < step_j <= 1
     step_k = step.step(k)

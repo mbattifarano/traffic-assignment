@@ -7,7 +7,6 @@ from typing import List
 import numpy as np
 from traffic_assignment.network.demand import Demand
 from traffic_assignment.network.road_network import Network
-from traffic_assignment.link_cost_function.base import LinkCostFunction
 
 
 class SearchDirection(ABC):

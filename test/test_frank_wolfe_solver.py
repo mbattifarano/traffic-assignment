@@ -1,12 +1,13 @@
 import random
-from itertools import permutations
-
 import time
-import matplotlib.pyplot as plt
+import warnings
+from itertools import permutations, count
 
+import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-from hypothesis import given, HealthCheck, settings
+import pandas as pd
+from hypothesis import given, settings
 from hypothesis.extra.numpy import arrays
 from hypothesis.strategies import (builds, integers, composite, floats, lists,
                                    sampled_from)
@@ -14,7 +15,7 @@ from traffic_assignment.frank_wolfe.search_direction import (
     ShortestPathSearchDirection
 )
 from traffic_assignment.frank_wolfe.solver import Solver
-from traffic_assignment.frank_wolfe.step_size import MonotoneDecreasingStepSize
+from traffic_assignment.frank_wolfe.step_size import LineSearchStepSize
 from traffic_assignment.link_cost_function.bpr import BPRLinkCostFunction
 from traffic_assignment.network.demand import Demand
 from traffic_assignment.network.path import Path
@@ -35,14 +36,14 @@ def add_random_edges(g: nx.DiGraph, p=0.05):
 """Random graphs that are strongly connected and have low node degree"""
 random_graphs = builds(
     nx.generators.gn_graph,
-    integers(min_value=5, max_value=20),
+    integers(min_value=10, max_value=20),
 ).map(make_twoway).map(add_random_edges)
 
 random_networks = builds(RoadNetwork, random_graphs)
 
 non_negatives = floats(min_value=0.0, max_value=2 ** 8,
                        allow_nan=False, allow_infinity=False)
-positives = non_negatives.map(lambda x: x + 0.01)
+positives = non_negatives.filter(lambda x: x > 0.0)
 
 
 def link_vector_of(shape, elements):
@@ -52,7 +53,7 @@ def link_vector_of(shape, elements):
 def link_cost_function_of(shape):
     return builds(
         BPRLinkCostFunction,
-        link_vector_of(shape, non_negatives),
+        link_vector_of(shape, positives),
         link_vector_of(shape, positives),
     )
 
@@ -71,15 +72,21 @@ def demands(draw, nodes):
 def solvers(draw):
     network = draw(random_networks)
     n = network.number_of_links()
-    step_size = MonotoneDecreasingStepSize()
     link_cost_function = draw(link_cost_function_of(n))
+    step_size = LineSearchStepSize(link_cost_function)
     demand = draw(lists(
         demands(network.nodes),
         min_size=1,
         max_size=5,
     ))
     search = ShortestPathSearchDirection(network, demand)
-    return Solver(step_size, search, link_cost_function)
+    return Solver(
+        step_size,
+        search,
+        link_cost_function,
+        max_iterations=10000,
+        tolerance=1e-5,
+    )
 
 
 @given(solvers())
@@ -115,25 +122,90 @@ def test_solver_update(solver):
     assert second_iteration.gap < first_iteration.gap
 
 
+solver_counter = count()
+
+
 @given(solvers())
 @settings(max_examples=10, deadline=None)
-def test_solver_solve(solver):
+def test_solver_solve(data_store, solver):
+    example_number = next(solver_counter)
+    t0 = time.time()
     final_iteration = solver.solve()
-    assert final_iteration.iteration >= 1
-    assert final_iteration.iteration <= 100
-    gaps = np.array([iteration.gap for iteration in solver.iterations])
+    t = time.time() - t0
+    n = final_iteration.iteration
+    data_store['solvers'].append((solver, t))
+    assert n >= 1
+    assert n <= solver.max_iterations
+    gaps = solver.gaps
     assert gaps.min() >= 0
     assert gaps[0] >= np.inf
     assert gaps[1:].max() < np.inf
     assert not np.isnan(gaps).any()
     # TODO: test feasible
-    plt.figure()
-    plt.semilogy(gaps)
-    plt.savefig(f"test/artifacts/gaps.{time.time()}.png")
-    plt.close()
-    # assert final_iteration.gap <= gaps.min() + solver.tolerance
+    if (gaps > 0.0).all():
+        plt.figure()
+        plt.semilogy(gaps)
+        plt.savefig(f"test/artifacts/gaps.{example_number}.png")
+        plt.close()
     assert ((final_iteration.gap <= solver.tolerance)
             or (final_iteration.iteration == solver.max_iterations))
 
 
+def test_solver_benchmark(braess_solver, braess_solution, tolerance):
+    solution_iteration = braess_solver.solve()
+    actual_link_flow = solution_iteration.link_flow
+    errors = [
+        np.linalg.norm(
+            braess_solver.iterations[i].link_flow
+            - braess_solver.iterations[i-1].link_flow
+        )
+        for i in range(1, len(braess_solver.iterations))
+    ]
+    plt.figure()
+    plt.semilogy(errors)
+    plt.savefig(f"test/artifacts/braess.errors.{time.time()}.png")
+    plt.close()
 
+    plt.figure()
+    plt.semilogy(braess_solver.gaps)
+    plt.savefig(f"test/artifacts/braess.gaps.{time.time()}.png")
+    plt.close()
+    assert 0 < solution_iteration.gap < tolerance
+    assert errors[-1] < tolerance
+    assert np.allclose(actual_link_flow, braess_solution)
+
+
+def test_report(data_store):
+    results = data_store['solvers']
+    data = []
+    total_solution_time = 0
+    for i, (solver, t) in enumerate(results):
+        total_solution_time += t
+        n_iter = len(solver.iterations)
+        n_links = len(solver.iteration.link_flow)
+        total_demand = sum(d.volume for d in solver.search_direction.demand)
+        final_gap = solver.iteration.gap
+        error = np.linalg.norm(
+            solver.iterations[-1].link_flow
+            - solver.iterations[-2].link_flow,
+            1
+        )/ solver.iteration.link_flow.sum()  # absolute percentage error
+        direction_mass = np.linalg.norm(solver.iteration.search_direction)
+        warnings.warn(f"change in link flow at solution {i}: {error}%")
+        free_flow_cost = solver.link_cost_function.link_cost(0.0).max()
+        x = solver.iteration.link_flow
+        total_delay = solver.link_cost_function.link_cost(x).dot(x)
+        it_per_sec = 1 / np.mean([it.duration for it in solver.iterations[1:]])
+        data.append((i, n_iter, n_links, total_demand, free_flow_cost,
+                     total_delay, direction_mass, final_gap, error, it_per_sec,
+                     t))
+    df = pd.DataFrame(
+        data,
+        columns=['solver', 'iterations', 'links', 'demand',
+                 'free flow travel time (max)', 'total delay',
+                 'direction magnitude',
+                 'gap', 'link flow error', 'it/sec', 'total duration']
+    ).set_index('solver')
+    df.to_csv('test/artifacts/solver_report.csv')
+    warnings.warn("\n"+df.to_string(float_format='{:0.3f}'.format))
+    warnings.warn(f"total time to solve: {total_solution_time:0.2f}s; ({total_solution_time / len(results):0.2f}s per solution).")
