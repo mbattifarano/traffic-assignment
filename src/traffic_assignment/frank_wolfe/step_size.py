@@ -24,7 +24,11 @@ class LineSearchStepSize(StepSize):
     cost: LinkCostFunction
 
     def step(self, k: int, x: np.ndarray, d: np.ndarray) -> float:
-        return LineSearcher(self.cost, x, d).find_step_size()
+        """Take a large first step. Then find optimal step size."""
+        if k == 0:
+            return 1.0
+        else:
+            return LineSearcher(self.cost, x, d).find_step_size()
 
 
 @dataclass
@@ -33,7 +37,7 @@ class LineSearcher:
     link_flow: np.ndarray
     search_direction: np.ndarray
     max_iterations: int = 100
-    tolerance: float = 1e-5
+    tolerance: float = 1e-1
     a: float = 0
     b: float = 1
 
@@ -71,4 +75,4 @@ class LineSearcher:
         iteration = count()
         while self._continue_search(next(iteration)):
             self._search()
-        return self.alpha
+        return self.b

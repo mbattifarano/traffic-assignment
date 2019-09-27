@@ -1,5 +1,6 @@
 import time
-from typing import TypeVar, Optional
+from typing import TypeVar, Optional, Union
+import numpy as np
 
 T = TypeVar('T')
 
@@ -20,3 +21,14 @@ class Timer:
 
     def time_elapsed(self):
         return time.time() - self.t0
+
+
+ArrayOrFloat = Union[np.ndarray, float]
+
+
+def condense_array(a: np.ndarray) -> ArrayOrFloat:
+    val = a[0]
+    if (a == val).all():
+        return val
+    else:
+        return a

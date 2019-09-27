@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from dataclasses import dataclass
-from typing import List
 
 import numpy as np
-from traffic_assignment.network.demand import Demand
+from traffic_assignment.network.demand import TravelDemand
 from traffic_assignment.network.road_network import Network
 
 
@@ -24,11 +24,8 @@ class SearchDirection(ABC):
 @dataclass(frozen=True)
 class ShortestPathSearchDirection(SearchDirection):
     network: Network
-    demand: List[Demand]
+    demand: TravelDemand
 
     def minimum_point(self, travel_cost: np.ndarray, link_flow: np.ndarray)\
             -> np.ndarray:
-        return sum(
-            self.network.shortest_path_assignment(d, travel_cost)
-            for d in self.demand
-        )
+        return self.network.shortest_path_assignment(self.demand, travel_cost)

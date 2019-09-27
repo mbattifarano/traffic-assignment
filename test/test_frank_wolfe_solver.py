@@ -151,7 +151,8 @@ def test_solver_solve(data_store, solver):
             or (final_iteration.iteration == solver.max_iterations))
 
 
-def test_solver_benchmark(braess_solver, braess_solution, tolerance):
+def test_solver_braess_ue(braess_ue_solver, braess_ue_solution, tolerance):
+    braess_solver = braess_ue_solver
     solution_iteration = braess_solver.solve()
     actual_link_flow = solution_iteration.link_flow
     errors = [
@@ -163,16 +164,40 @@ def test_solver_benchmark(braess_solver, braess_solution, tolerance):
     ]
     plt.figure()
     plt.semilogy(errors)
-    plt.savefig(f"test/artifacts/braess.errors.{time.time()}.png")
+    plt.savefig(f"test/artifacts/braess.ue.errors.{time.time()}.png")
     plt.close()
 
     plt.figure()
     plt.semilogy(braess_solver.gaps)
-    plt.savefig(f"test/artifacts/braess.gaps.{time.time()}.png")
+    plt.savefig(f"test/artifacts/braess.ue.gaps.{time.time()}.png")
     plt.close()
-    assert 0 < solution_iteration.gap < tolerance
-    assert errors[-1] < tolerance
-    assert np.allclose(actual_link_flow, braess_solution)
+    assert 0 <= solution_iteration.gap < tolerance
+    assert np.allclose(actual_link_flow, braess_ue_solution)
+
+
+def test_solver_braess_so(braess_so_solver, braess_so_solution, tolerance):
+    braess_solver = braess_so_solver
+    solution_iteration = braess_solver.solve()
+    actual_link_flow = solution_iteration.link_flow
+    errors = [
+        np.linalg.norm(
+            braess_solver.iterations[i].link_flow
+            - braess_solver.iterations[i-1].link_flow
+        )
+        for i in range(1, len(braess_solver.iterations))
+    ]
+    plt.figure()
+    plt.semilogy(errors)
+    plt.savefig(f"test/artifacts/braess.so.errors.{time.time()}.png")
+    plt.close()
+
+    plt.figure()
+    plt.semilogy(braess_solver.gaps)
+    plt.savefig(f"test/artifacts/braess.so.gaps.{time.time()}.png")
+    plt.close()
+
+    assert 0 <= solution_iteration.gap < tolerance
+    assert np.allclose(actual_link_flow, braess_so_solution)
 
 
 def test_report(data_store):

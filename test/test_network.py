@@ -113,3 +113,17 @@ def test_shortest_path_assignment(data):
         # If there is no path, an exception will be raised.
         with pytest.raises(nx.NetworkXNoPath):
             network.shortest_path_assignment(demand, travel_cost)
+
+
+def test_braess_network(braess_network):
+    edges = [(l.origin.name, l.destination.name) for l in braess_network.links]
+    expected_edges = [
+        (0, 1),
+        (1, 3),
+        (0, 2),
+        (2, 3),
+        (2, 1),
+    ]
+    print(edges)
+    print(expected_edges)
+    assert edges == expected_edges

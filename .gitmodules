@@ -1,3 +1,3 @@
 [submodule "test/fixtures/TransportationNetworks"]
 	path = test/fixtures/TransportationNetworks
-	url = https://github.com/bstabler/TransportationNetworks.git
+	url = git@github.com:mbattifarano/TransportationNetworks.git

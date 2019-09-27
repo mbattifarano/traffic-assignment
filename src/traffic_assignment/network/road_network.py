@@ -7,10 +7,11 @@ from typing import Iterable
 import networkx as nx
 import numpy as np
 
-from .demand import Demand
+from .demand import TravelDemand
 from .link import Link
 from .node import Node
 from .path import Path
+from .shortest_path import single_source_dijkstra
 
 
 class Network(ABC):
@@ -24,11 +25,15 @@ class Network(ABC):
         pass
 
     @abstractmethod
+    def get_node(self, name) -> Node:
+        pass
+
+    @abstractmethod
     def has_path(self, origin: Node, destination: Node) -> bool:
         pass
 
     @abstractmethod
-    def shortest_path_assignment(self, demand: Demand,
+    def shortest_path_assignment(self, demand: TravelDemand,
                                  travel_costs: np.ndarray) -> np.ndarray:
         pass
 
@@ -49,11 +54,26 @@ class RoadNetwork(Network):
     def number_of_nodes(self) -> int:
         return len(self.nodes)
 
-    def shortest_path_assignment(self, demand: Demand,
+    def shortest_path_assignment(self, demand: TravelDemand,
                                  travel_costs: np.ndarray) -> np.ndarray:
         self._set_link_costs(travel_costs)
-        path = self._shortest_path(demand.origin, demand.destination)
-        return self._assign_path_flow_to_links(path, demand.volume)
+        link_flow = np.zeros(self.number_of_links())
+        for orgn, dest_volumes in demand.origin_based_index.items():
+            targets = list(dest_volumes.keys())
+            _, paths = single_source_dijkstra(
+                self.graph,
+                orgn,
+                targets,
+                weight=self.WEIGHT_KEY,
+            )
+            for dest, volume in dest_volumes.items():
+                shortest_path = Path(paths[dest])
+                link_flow = self._assign_path_flow_to_links(
+                    shortest_path,
+                    volume,
+                    link_flow
+                )
+        return link_flow
 
     def _shortest_path(self, origin: Node, destination: Node) -> Path:
         return Path(nx.shortest_path(
@@ -71,6 +91,9 @@ class RoadNetwork(Network):
         else:
             return True
 
+    def get_node(self, name) -> Node:
+        return self._get_node(name)
+
     def _get_node(self, name: str) -> Node:
         return self.graph.nodes[name][self.NODE_KEY]
 
@@ -84,7 +107,7 @@ class RoadNetwork(Network):
         self.graph.edges[u, v][self.LINK_KEY] = link
 
     def _build_nodes(self) -> Iterable[Node]:
-        for i, u in enumerate(self.graph.nodes):
+        for i, u in enumerate(sorted(self.graph.nodes)):
             node = Node(i, u)
             self._set_node(u, node)
             yield node
@@ -93,7 +116,7 @@ class RoadNetwork(Network):
         index = count()
         for from_node in self.nodes:
             u = from_node.name
-            for v in self.graph.successors(u):
+            for v in sorted(self.graph.successors(u)):
                 to_node = self._get_node(v)
                 link = Link(next(index), from_node, to_node)
                 self._set_link(u, v, link)
@@ -104,8 +127,8 @@ class RoadNetwork(Network):
             u, v = link.edge
             self.graph.edges[u, v][self.WEIGHT_KEY] = cost
 
-    def _assign_path_flow_to_links(self, path: Path, volume: float):
-        link_flow = np.zeros(self.number_of_links())
+    def _assign_path_flow_to_links(self, path: Path, volume: float,
+                                   link_flow: np.ndarray) -> np.ndarray:
         for (u, v) in path.edges:
-            link_flow[self._get_link(u, v).id] = volume
+            link_flow[self._get_link(u, v).id] += volume
         return link_flow

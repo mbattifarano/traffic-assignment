@@ -19,7 +19,7 @@ class Solver:
     link_cost_function: LinkCostFunction
     iterations: List[Iteration] = field(default_factory=list)
     max_iterations: int = 100
-    tolerance: float = 1e-12
+    tolerance: float = 1e-15
     timer: Timer = Timer()
 
     def __post_init__(self):
@@ -29,8 +29,15 @@ class Solver:
         self.timer.start()
         cost = self.link_cost_function.link_cost(0.0)
         link_flow = self.search_direction.minimum_point(cost, 0.0)
-        return Iteration(0, cost, link_flow, np.zeros(len(link_flow)), np.inf,
-                         self.timer.time_elapsed())
+        return Iteration(
+            iteration=0,
+            cost=cost,
+            link_flow=link_flow,
+            step=np.NaN,
+            search_direction=np.zeros(len(link_flow)),
+            best_lower_bound=0.0,
+            gap=np.inf,
+            duration=self.timer.time_elapsed())
 
     @property
     def iteration(self) -> Iteration:
@@ -48,9 +55,30 @@ class Solver:
         direction = self.search_direction.search_direction(cost, link_flow)
         step = self.step_size.step(i, link_flow, direction)
         new_link_flow = iteration.link_flow + step * direction
-        gap = -np.dot(cost, direction)
-        return Iteration(i + 1, cost, new_link_flow, direction, gap,
-                         self.timer.time_elapsed())
+        gap, best_lower_bound = self._relative_gap(cost, direction,
+                                                   new_link_flow)
+        return Iteration(
+            iteration=i + 1,
+            cost=cost,
+            link_flow=new_link_flow,
+            step=step,
+            search_direction=direction,
+            best_lower_bound=best_lower_bound,
+            gap=gap,
+            duration=self.timer.time_elapsed()
+        )
+
+    def objective_value(self, link_flow: np.ndarray) -> float:
+        return self.link_cost_function.integral_link_cost(link_flow).sum()
+
+    def _relative_gap(self, cost, direction, link_flow):
+        gap = np.dot(cost, direction)
+        best_lower_bound = max(
+            self.objective_value(link_flow) + gap,
+            self.iteration.best_lower_bound
+        )
+        relative_gap = -gap / best_lower_bound
+        return relative_gap, best_lower_bound
 
     def _continue(self) -> bool:
         return (
@@ -70,6 +98,8 @@ class Iteration:
     iteration: int
     cost: np.ndarray
     link_flow: np.ndarray
+    step: float
     search_direction: np.ndarray
+    best_lower_bound: float
     gap: float
     duration: float
