@@ -150,7 +150,7 @@ names = [
     'SiouxFalls',
     'Anaheim',
     'Barcelona',
-    'Eastern-Massachusetts',
+    'Winnipeg',
 ]
 
 
