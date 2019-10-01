@@ -66,6 +66,6 @@ def _create_solver(network: Network, demand: TravelDemand,
             demand,
         ),
         link_cost_function,
-        tolerance=1e-5,
+        tolerance=1e-6,
         max_iterations=50000
     )
