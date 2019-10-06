@@ -1,4 +1,5 @@
-from traffic_assignment.network.road_network import RoadNetwork, Demand
+from traffic_assignment.network.road_network import RoadNetwork
+from traffic_assignment.network.demand import Demand
 from traffic_assignment.network.path import Path
 
 import numpy as np
@@ -115,7 +116,7 @@ def test_shortest_path_assignment(data):
             network.shortest_path_assignment(demand, travel_cost)
 
 
-def test_braess_network(braess_network):
+def test_braess_network_edges(braess_network):
     edges = [(l.origin.name, l.destination.name) for l in braess_network.links]
     expected_edges = [
         (0, 1),
@@ -124,6 +125,21 @@ def test_braess_network(braess_network):
         (2, 3),
         (2, 1),
     ]
-    print(edges)
-    print(expected_edges)
     assert edges == expected_edges
+
+
+def test_path_incidences(braess_network, braess_demand_augmented):
+    link_path, path_od, path_index = braess_network.path_incidences(braess_demand_augmented)
+    assert len(path_index) == 5
+    assert link_path.shape == (5, 5)
+    assert path_od.shape == (5, 2)
+    link_index = {(link.origin.name, link.destination.name): i
+                  for i, link in enumerate(braess_network.links)}
+    od_index = {(d.origin.name, d.destination.name): i
+                for i, d in enumerate(braess_demand_augmented.demand)}
+    for path, i in path_index.items():
+        for (u, v) in path.edges:
+            assert link_path[link_index[u, v], i] == 1
+        orgn = path.nodes[0]
+        dest = path.nodes[-1]
+        assert path_od[i, od_index[(orgn, dest)]] == 1

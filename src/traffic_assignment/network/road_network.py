@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from itertools import count
-from typing import Iterable
+from typing import Iterable, List
+from toolz import memoize
 
 import networkx as nx
 import numpy as np
@@ -25,6 +26,14 @@ class Network(ABC):
         pass
 
     @abstractmethod
+    def number_of_paths(self, demand: TravelDemand) -> int:
+        pass
+
+    @abstractmethod
+    def path_incidences(self, demand: TravelDemand):
+        pass
+
+    @abstractmethod
     def get_node(self, name) -> Node:
         pass
 
@@ -35,6 +44,10 @@ class Network(ABC):
     @abstractmethod
     def shortest_path_assignment(self, demand: TravelDemand,
                                  travel_costs: np.ndarray) -> np.ndarray:
+        pass
+
+    @abstractmethod
+    def set_link_costs(self, travel_costs: np.ndarray) -> ():
         pass
 
 
@@ -54,9 +67,48 @@ class RoadNetwork(Network):
     def number_of_nodes(self) -> int:
         return len(self.nodes)
 
+    @memoize
+    def get_all_paths(self, demand: TravelDemand):
+        all_paths = {}
+        for orgn, dest, _ in demand.demand:
+            all_paths[(orgn, dest)] = list(
+                self._get_all_paths_between(orgn, dest)
+            )
+        return all_paths
+
+    def number_of_paths(self, demand: TravelDemand) -> int:
+        all_paths = self.get_all_paths(demand)
+        return sum(map(len, all_paths.values()))
+
+    def path_incidences(self, demand: TravelDemand):
+        """Create link-path and path-od incidence matrices"""
+        all_paths = self.get_all_paths(demand)
+        n_paths = self.number_of_paths(demand)
+        link_path = np.zeros((self.number_of_links(), n_paths))
+        path_od = np.zeros((n_paths, demand.number_of_od_pairs))
+        link_index = {link: i for i, link in enumerate(self.links)}
+        od_index = {(d.origin, d.destination): i
+                    for i, d in enumerate(demand.demand)}
+        path_counter = count()
+        path_index = {}
+        for (o, d), paths in all_paths.items():
+            for path in paths:
+                i = next(path_counter)
+                path_index[path] = i
+                j = od_index[(o, d)]
+                path_od[i, j] = 1
+                for (u, v) in path.edges:
+                    link = self._get_link(u, v)
+                    k = link_index[link]
+                    link_path[k, i] = 1
+        return link_path, path_od, path_index
+
+    def _get_all_paths_between(self, orgn: Node, dest: Node) -> Iterable[Path]:
+        return map(Path, nx.all_simple_paths(self.graph, orgn.name, dest.name))
+
     def shortest_path_assignment(self, demand: TravelDemand,
                                  travel_costs: np.ndarray) -> np.ndarray:
-        self._set_link_costs(travel_costs)
+        self.set_link_costs(travel_costs)
         link_flow = np.zeros(self.number_of_links())
         for orgn, dest_volumes in demand.origin_based_index.items():
             targets = list(dest_volumes.keys())
@@ -122,7 +174,7 @@ class RoadNetwork(Network):
                 self._set_link(u, v, link)
                 yield link
 
-    def _set_link_costs(self, travel_costs: np.ndarray):
+    def set_link_costs(self, travel_costs: np.ndarray) -> ():
         for link, cost in zip(self.links, travel_costs):
             u, v = link.edge
             self.graph.edges[u, v][self.WEIGHT_KEY] = cost

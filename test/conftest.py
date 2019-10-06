@@ -63,6 +63,22 @@ def braess_demand(braess_network):
 
 
 @pytest.fixture
+def braess_demand_augmented(braess_network):
+    return TravelDemand([
+        Demand(
+            braess_network.nodes[0],
+            braess_network.nodes[3],
+            6.0
+        ),
+        Demand(
+            braess_network.nodes[0],
+            braess_network.nodes[1],
+            2.0
+        ),
+    ])
+
+
+@pytest.fixture
 def tolerance():
     return 1e-15
 

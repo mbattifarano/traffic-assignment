@@ -1,7 +1,10 @@
 from __future__ import annotations
-from typing import NamedTuple, List, Mapping
-from dataclasses import dataclass
+
 from collections import defaultdict
+from dataclasses import dataclass
+from typing import NamedTuple, List, Mapping
+
+import numpy as np
 
 from .node import Node
 
@@ -15,6 +18,17 @@ class TravelDemand:
 
     def __post_init__(self):
         self.origin_based_index = _reindex_demand(self.demand)
+        self.demand = tuple(sorted(self.demand))
+
+    def __hash__(self):
+        return hash(tuple(self.demand))
+
+    @property
+    def number_of_od_pairs(self) -> int:
+        return len(self.demand)
+
+    def to_array(self) -> np.ndarray:
+        return np.array([d.volume for d in self.demand])
 
 
 class Demand(NamedTuple):
