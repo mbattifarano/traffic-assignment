@@ -1,5 +1,5 @@
 from traffic_assignment.network.road_network import RoadNetwork
-from traffic_assignment.network.demand import Demand
+from traffic_assignment.network.demand import Demand, TravelDemand
 from traffic_assignment.network.path import Path
 
 import numpy as np
@@ -22,7 +22,10 @@ def random_network_with_demand(draw):
     network = draw(random_network)
     volume = floats(min_value=1.0)
     nodes = sampled_from(network.nodes)
-    demand = draw(builds(Demand, nodes, nodes, volume))
+    demand = draw(builds(
+        TravelDemand,
+        lists(builds(Demand, nodes, nodes, volume), min_size=1, max_size=1)
+    ))
     return network, demand
 
 
@@ -83,7 +86,8 @@ def has_path(network, link_flow, demand):
 
 @given(random_network_with_demand_and_travel_cost())
 def test_shortest_path_assignment(data):
-    network, demand, travel_cost = data
+    network, travel_demand, travel_cost = data
+    demand = travel_demand.demand[0]
     try:
         path = nx.shortest_path(network.graph,
                                 demand.origin.name, demand.destination.name)
@@ -91,7 +95,7 @@ def test_shortest_path_assignment(data):
         path = None
 
     if path is not None:  # if the O-D is connected
-        link_flow = network.shortest_path_assignment(demand, travel_cost)
+        link_flow = network.shortest_path_assignment(travel_demand, travel_cost)
         # assert that the weights have been assigned to each network edge
         for i, cost in enumerate(travel_cost):
             assert network.graph.edges[network.links[i].edge]['weight'] == cost
@@ -113,17 +117,17 @@ def test_shortest_path_assignment(data):
     else:
         # If there is no path, an exception will be raised.
         with pytest.raises(nx.NetworkXNoPath):
-            network.shortest_path_assignment(demand, travel_cost)
+            network.shortest_path_assignment(travel_demand, travel_cost)
 
 
 def test_braess_network_edges(braess_network):
     edges = [(l.origin.name, l.destination.name) for l in braess_network.links]
     expected_edges = [
         (0, 1),
-        (1, 3),
         (0, 2),
-        (2, 3),
+        (1, 3),
         (2, 1),
+        (2, 3),
     ]
     assert edges == expected_edges
 

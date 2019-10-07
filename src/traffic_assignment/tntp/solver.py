@@ -40,23 +40,29 @@ class TNTPProblem:
             name
         )
 
-    def _solver(self, link_cost_function: LinkCostFunction) -> Solver:
+    def _solver(self, link_cost_function: LinkCostFunction,
+                tolerance, max_iterations) -> Solver:
         road_network = self.network.to_road_network()
         return _create_solver(
             road_network,
             self.trips.to_demand(road_network),
-            link_cost_function
+            link_cost_function,
+            tolerance,
+            max_iterations,
         )
 
-    def ue_solver(self) -> Solver:
-        return self._solver(self.network.to_link_cost_function())
+    def ue_solver(self, tolerance=1e-6, max_iterations=100000) -> Solver:
+        return self._solver(self.network.to_link_cost_function(),
+                            tolerance, max_iterations)
 
-    def so_solver(self) -> Solver:
-        return self._solver(self.network.to_marginal_link_cost_function())
+    def so_solver(self, tolerance=1e-6, max_iterations=100000) -> Solver:
+        return self._solver(self.network.to_marginal_link_cost_function(),
+                            tolerance, max_iterations)
 
 
 def _create_solver(network: Network, demand: TravelDemand,
-                   link_cost_function: LinkCostFunction) -> Solver:
+                   link_cost_function: LinkCostFunction,
+                   tolerance, max_iterations) -> Solver:
     return Solver(
         LineSearchStepSize(
             link_cost_function
@@ -66,6 +72,6 @@ def _create_solver(network: Network, demand: TravelDemand,
             demand,
         ),
         link_cost_function,
-        tolerance=1e-6,
-        max_iterations=50000
+        tolerance=tolerance,
+        max_iterations=max_iterations
     )

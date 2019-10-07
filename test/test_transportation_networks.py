@@ -4,7 +4,8 @@ import time
 
 
 def test_networks(transportation_network):
-    ue_solver = transportation_network.ue_solver()
+    tol = 1e-5
+    ue_solver = transportation_network.ue_solver(tolerance=tol)
     result = ue_solver.solve()
     actual_flow = result.link_flow
     expected_flow = transportation_network.solution.link_flow()
@@ -36,4 +37,4 @@ def test_networks(transportation_network):
     max error: {abs(expected_flow - actual_flow).max()}
     average error: {abs(expected_flow - actual_flow).mean()}
     """)
-    assert np.allclose(expected_flow, actual_flow, rtol=1e-5)
+    assert abs((expected_flow - actual_flow) / expected_flow).max() <= 1e-3

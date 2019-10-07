@@ -14,7 +14,7 @@ def test_value_or_default(a: Optional[int], b: int):
 
 
 def test_timer():
-    eps = 1e-3
+    eps = 1e-2
     timer = utils.Timer()
     assert timer.t0 is None
     timer.start()

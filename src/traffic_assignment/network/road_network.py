@@ -119,7 +119,10 @@ class RoadNetwork(Network):
                 weight=self.WEIGHT_KEY,
             )
             for dest, volume in dest_volumes.items():
-                shortest_path = Path(paths[dest])
+                try:
+                    shortest_path = Path(paths[dest])
+                except KeyError:
+                    raise nx.NetworkXNoPath(f"No path from {orgn} to {dest}.")
                 link_flow = self._assign_path_flow_to_links(
                     shortest_path,
                     volume,

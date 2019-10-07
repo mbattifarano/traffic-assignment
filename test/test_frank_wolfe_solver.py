@@ -17,7 +17,7 @@ from traffic_assignment.frank_wolfe.search_direction import (
 from traffic_assignment.frank_wolfe.solver import Solver
 from traffic_assignment.frank_wolfe.step_size import LineSearchStepSize
 from traffic_assignment.link_cost_function.bpr import BPRLinkCostFunction
-from traffic_assignment.network.demand import Demand
+from traffic_assignment.network.demand import Demand, TravelDemand
 from traffic_assignment.network.path import Path
 from traffic_assignment.network.road_network import RoadNetwork
 
@@ -74,11 +74,17 @@ def solvers(draw):
     n = network.number_of_links()
     link_cost_function = draw(link_cost_function_of(n))
     step_size = LineSearchStepSize(link_cost_function)
-    demand = draw(lists(
-        demands(network.nodes),
-        min_size=1,
-        max_size=5,
-    ))
+    demand = draw(
+        builds(
+            TravelDemand,
+            lists(
+                demands(network.nodes),
+                min_size=1,
+                max_size=5,
+                unique_by=lambda d: d.trip(),
+            )
+        )
+    )
     search = ShortestPathSearchDirection(network, demand)
     return Solver(
         step_size,
@@ -99,18 +105,15 @@ def test_solver_initial_iteration(solver):
     link_flow = iteration.link_flow
     assert len(link_flow) == network.number_of_links()
     assert link_flow.min() >= 0
-    assert link_flow.max() > 0.0
-    link_flows = {(link.origin.name, link.destination.name): link_flow[link.id]
-                  for link in network.links}
+    assert link_flow.max() <= solver.search_direction.demand.to_array().sum() + 1e-8
+    link_flows = {(link.origin.name, link.destination.name): link_flow[i]
+                  for i, link in enumerate(network.links)}
     for demand in solver.search_direction.demand:
         paths = nx.all_simple_paths(network.graph,
                                     demand.origin.name,
                                     demand.destination.name)
-        # there should be at least one path for which all links in that path
-        # have flow greater than or equal to the demand volume
-        # this is a necessary but not sufficient condition.
-        assert any(min(link_flows[e] for e in Path(path).edges) >= demand.volume
-                   for path in paths)
+        assert sum(min(link_flows[e] for e in Path(path).edges)
+                   for path in paths) >= demand.volume
 
 
 @given(solvers())
@@ -119,7 +122,8 @@ def test_solver_update(solver):
     second_iteration = solver.update(first_iteration)
     # TODO: test feasible
     # the initial gap in inf, the updated gap should be smaller
-    assert second_iteration.gap < first_iteration.gap
+    assert ((second_iteration.best_lower_bound == 0.0)
+            or (second_iteration.gap < first_iteration.gap))
 
 
 solver_counter = count()
@@ -137,9 +141,10 @@ def test_solver_solve(data_store, solver):
     assert n >= 1
     assert n <= solver.max_iterations
     gaps = solver.gaps
+    best_lower_bounds = np.array([i.best_lower_bound for i in solver.iterations])
     assert gaps.min() >= 0
     assert gaps[0] >= np.inf
-    assert gaps[1:].max() < np.inf
+    assert best_lower_bounds.min() == 0.0 or gaps[1:].max() < np.inf
     assert not np.isnan(gaps).any()
     # TODO: test feasible
     if (gaps > 0.0).all():
@@ -216,7 +221,6 @@ def test_report(data_store):
             1
         )/ solver.iteration.link_flow.sum()  # absolute percentage error
         direction_mass = np.linalg.norm(solver.iteration.search_direction)
-        warnings.warn(f"change in link flow at solution {i}: {error}%")
         free_flow_cost = solver.link_cost_function.link_cost(0.0).max()
         x = solver.iteration.link_flow
         total_delay = solver.link_cost_function.link_cost(x).dot(x)

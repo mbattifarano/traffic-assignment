@@ -164,9 +164,9 @@ def sioux_falls_solution():
 
 names = [
     'SiouxFalls',
-    'Anaheim',
-    'Barcelona',
-    'Winnipeg',
+    #'Anaheim',
+    #'Barcelona',
+    #'Winnipeg',
 ]
 
 
@@ -174,4 +174,6 @@ names = [
 def transportation_network(request):
     directory = TransportationNetworksDirectories.parent_directory
     name = request.param
-    return TNTPProblem.from_directory(os.path.join(directory, name))
+    return TNTPProblem.from_directory(
+        os.path.join(directory, name),
+    )

@@ -23,6 +23,12 @@ class TravelDemand:
     def __hash__(self):
         return hash(tuple(self.demand))
 
+    def __iter__(self):
+        return iter(self.demand)
+
+    def __len__(self):
+        return len(self.demand)
+
     @property
     def number_of_od_pairs(self) -> int:
         return len(self.demand)
@@ -36,6 +42,16 @@ class Demand(NamedTuple):
     destination: Node
     volume: float
 
+    def trip(self) -> Trip:
+        return Trip(
+            self.origin,
+            self.destination
+        )
+
+
+class Trip(NamedTuple):
+    origin: Node
+    destination: Node
 
 def _reindex_demand(demand: List[Demand]) -> OriginBasedIndex:
     index = defaultdict(dict)

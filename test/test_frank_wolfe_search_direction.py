@@ -6,7 +6,8 @@ from hypothesis.strategies import (composite, sampled_from, builds, lists,
                                    integers)
 from traffic_assignment.frank_wolfe.search_direction import (
     ShortestPathSearchDirection)
-from traffic_assignment.network.road_network import RoadNetwork, Demand
+from traffic_assignment.network.road_network import RoadNetwork
+from traffic_assignment.network.demand import Demand, TravelDemand
 
 # Use integers for all numeric types to avoid rouding errors in comparisons
 non_negatives = integers(min_value=0, max_value=2**8)
@@ -30,13 +31,18 @@ def demand_on(nodes):
 def shortest_path_search_directions(draw):
     network = draw(random_network)
     nodes = sampled_from(network.nodes)
-    demand = draw(lists(
-        demand_on(nodes).filter(
-            lambda d: network.has_path(d.origin, d.destination)
-        ),
-        min_size=1,
-        max_size=10,
-    ))
+    demand = draw(
+        builds(
+            TravelDemand,
+            lists(
+                demand_on(nodes).filter(
+                    lambda d: network.has_path(d.origin, d.destination)
+                ),
+                min_size=1,
+                max_size=10,
+            )
+        )
+    )
     return ShortestPathSearchDirection(network, demand)
 
 
@@ -59,5 +65,5 @@ def test_shortest_path_search_direction(data):
     # actual_search_direction = y - x, recover y, the shortest path assignment
     y = actual_search_direction + x
     assert y.min() >= 0
-    total_demand = sum(d.volume for d in search.demand)
+    total_demand = search.demand.to_array().sum()
     assert y.max() <= total_demand
