@@ -29,6 +29,9 @@ class TNTPTrips:
     def to_demand(self, network: Network) -> TravelDemand:
         return TravelDemand([trip.to_demand(network) for trip in self.trips])
 
+    def total_demand(self) -> float:
+        return sum(t.volume for t in self.trips)
+
 
 class MetaData(NamedTuple):
     n_zones: int

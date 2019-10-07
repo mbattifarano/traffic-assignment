@@ -4,7 +4,7 @@ import time
 
 
 def test_networks(transportation_network):
-    tol = 1e-5
+    tol = 1e-4
     ue_solver = transportation_network.ue_solver(tolerance=tol)
     result = ue_solver.solve()
     actual_flow = result.link_flow
@@ -38,3 +38,34 @@ def test_networks(transportation_network):
     average error: {abs(expected_flow - actual_flow).mean()}
     """)
     assert abs((expected_flow - actual_flow) / expected_flow).max() <= 1e-3
+
+
+def test_lower_control_ratio(transportation_network):
+    total_demand = transportation_network.trips.total_demand()
+    ue_link_flow = transportation_network.solution.link_flow()
+    lower_control_ratio = transportation_network.lower_control_ratio(ue_link_flow)
+    lcr_lp = lower_control_ratio.problem()
+    lcr_lp.solve()
+    print(f"""
+    {transportation_network.name}
+    {'='*len(transportation_network.name)}
+    lower control ratio: {lcr_lp.value/total_demand} ({lcr_lp.value} total).
+    """)
+    assert False
+
+
+def test_upper_control_ratio(transportation_network):
+    tol = 1e-4
+    total_demand = transportation_network.trips.total_demand()
+    so_solver = transportation_network.so_solver(tol)
+    so_link_flow = so_solver.solve()
+    upper_control_ratio = transportation_network.upper_control_ratio(so_link_flow)
+    ucr_lp = upper_control_ratio.problem()
+    ucr_lp.solve()
+    print(f"""
+    {transportation_network.name}
+    {'=' * len(transportation_network.name)}
+    lower control ratio: {ucr_lp.value / total_demand} ({ucr_lp.value} total).
+    """)
+    assert False
+

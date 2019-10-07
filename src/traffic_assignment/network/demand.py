@@ -36,6 +36,9 @@ class TravelDemand:
     def to_array(self) -> np.ndarray:
         return np.array([d.volume for d in self.demand])
 
+    def total_demand(self) -> float:
+        return self.to_array().sum()
+
 
 class Demand(NamedTuple):
     origin: Node
@@ -52,6 +55,7 @@ class Demand(NamedTuple):
 class Trip(NamedTuple):
     origin: Node
     destination: Node
+
 
 def _reindex_demand(demand: List[Demand]) -> OriginBasedIndex:
     index = defaultdict(dict)

@@ -15,6 +15,12 @@ from .network import TNTPNetwork
 from .solution import TNTPSolution
 from .trips import TNTPTrips
 
+from traffic_assignment.control_ratio_range.utils import (NetworkParameters,
+                                                          Variables,
+                                                          Constants)
+from traffic_assignment.control_ratio_range.lp import (UpperControlRatio,
+                                                       LowerControlRatio)
+
 
 @dataclass
 class TNTPProblem:
@@ -58,6 +64,34 @@ class TNTPProblem:
     def so_solver(self, tolerance=1e-6, max_iterations=100000) -> Solver:
         return self._solver(self.network.to_marginal_link_cost_function(),
                             tolerance, max_iterations)
+
+    def _prepare_control_ratio(self, target_link_flow):
+        road_network = self.network.to_road_network()
+        link_cost = self.network.to_link_cost_function()
+        marginal_link_cost = self.network.to_marginal_link_cost_function()
+        demand = self.trips.to_demand(road_network)
+        params = NetworkParameters.from_network(road_network, demand)
+        variables = Variables.from_network_parameters(params)
+        constants = Constants.from_network(
+            road_network,
+            demand,
+            link_cost,
+            marginal_link_cost,
+            target_link_flow
+        )
+        return constants, variables
+
+    def lower_control_ratio(self, user_equilibrium_link_flow):
+        constants, variables = self._prepare_control_ratio(
+            user_equilibrium_link_flow
+        )
+        return LowerControlRatio(constants, variables)
+
+    def upper_control_ratio(self, system_optimal_link_flow):
+        constants, variables = self._prepare_control_ratio(
+            system_optimal_link_flow
+        )
+        return UpperControlRatio(constants, variables)
 
 
 def _create_solver(network: Network, demand: TravelDemand,
