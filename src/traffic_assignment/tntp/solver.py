@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from typing import NamedTuple
+from traffic_assignment.utils import Timer
+from warnings import warn
 from traffic_assignment.frank_wolfe.search_direction import (
     ShortestPathSearchDirection)
 from traffic_assignment.frank_wolfe.solver import Solver
@@ -17,9 +20,21 @@ from .trips import TNTPTrips
 
 from traffic_assignment.control_ratio_range.utils import (NetworkParameters,
                                                           Variables,
-                                                          Constants)
+                                                          Constants,
+                                                          ControlRatioSchema,
+                                                          ProblemData)
 from traffic_assignment.control_ratio_range.lp import (UpperControlRatio,
                                                        LowerControlRatio)
+from traffic_assignment.utils import FileCache
+from toolz import memoize
+
+
+def problem_cache_key(args, kwargs):
+    problem, target_link_flow, tol = args
+    return f"{problem.name}_{hash(tuple(target_link_flow.ravel()))}_{tol:g}"
+
+
+problem_data_cache = FileCache(ControlRatioSchema(), '__problem_data_cache__')
 
 
 @dataclass
@@ -31,6 +46,9 @@ class TNTPProblem:
 
     @classmethod
     def from_directory(cls, path: str) -> TNTPProblem:
+        timer = Timer()
+        print("Reading tntp problem.")
+        timer.start()
         tntp_directory = TNTPDirectory(path)
         name = tntp_directory.name()
         with tntp_directory.network_file() as fp:
@@ -39,6 +57,7 @@ class TNTPProblem:
             trips = TNTPTrips.read_text(fp.read())
         with tntp_directory.solution_file() as fp:
             solution = TNTPSolution.read_text(fp.read())
+        print(f"Read tntp problem in {timer.time_elapsed():0.2f} (s).")
         return TNTPProblem(
             network,
             trips,
@@ -46,30 +65,37 @@ class TNTPProblem:
             name
         )
 
+    def road_network(self):
+        return self.network.to_road_network()
+
+    def travel_demand(self):
+        return self.trips.to_demand(self.road_network())
+
     def _solver(self, link_cost_function: LinkCostFunction,
-                tolerance, max_iterations) -> Solver:
-        road_network = self.network.to_road_network()
+                tolerance, max_iterations, **kwargs) -> Solver:
         return _create_solver(
-            road_network,
-            self.trips.to_demand(road_network),
+            self.road_network(),
+            self.travel_demand(),
             link_cost_function,
             tolerance,
             max_iterations,
+            **kwargs
         )
 
-    def ue_solver(self, tolerance=1e-6, max_iterations=100000) -> Solver:
+    def ue_solver(self, tolerance=1e-6, max_iterations=100000, **kwargs) -> Solver:
         return self._solver(self.network.to_link_cost_function(),
-                            tolerance, max_iterations)
+                            tolerance, max_iterations, **kwargs)
 
-    def so_solver(self, tolerance=1e-6, max_iterations=100000) -> Solver:
+    def so_solver(self, tolerance=1e-6, max_iterations=100000, **kwargs) -> Solver:
         return self._solver(self.network.to_marginal_link_cost_function(),
-                            tolerance, max_iterations)
+                            tolerance, max_iterations, **kwargs)
 
-    def _prepare_control_ratio(self, target_link_flow):
-        road_network = self.network.to_road_network()
+    @memoize(cache=problem_data_cache, key=problem_cache_key)
+    def _prepare_control_ratio(self, target_link_flow, tolerance=1e-8):
+        road_network = self.road_network()
         link_cost = self.network.to_link_cost_function()
         marginal_link_cost = self.network.to_marginal_link_cost_function()
-        demand = self.trips.to_demand(road_network)
+        demand = self.travel_demand()
         params = NetworkParameters.from_network(road_network, demand)
         variables = Variables.from_network_parameters(params)
         constants = Constants.from_network(
@@ -77,29 +103,41 @@ class TNTPProblem:
             demand,
             link_cost,
             marginal_link_cost,
-            target_link_flow
+            target_link_flow,
+            tolerance
         )
-        return constants, variables
+        return ProblemData(constants, variables)
 
-    def lower_control_ratio(self, user_equilibrium_link_flow):
+    def lower_control_ratio(self, user_equilibrium_link_flow, tolerance=1e-8):
+        timer = Timer()
+        print("Creating problem data.")
+        timer.start()
         constants, variables = self._prepare_control_ratio(
-            user_equilibrium_link_flow
+            user_equilibrium_link_flow,
+            tolerance
         )
+        print(f"Prepared problem data in {timer.time_elapsed():0.2f} (s).")
         return LowerControlRatio(constants, variables)
 
-    def upper_control_ratio(self, system_optimal_link_flow):
+    def upper_control_ratio(self, system_optimal_link_flow, tolerance=1e-2):
         constants, variables = self._prepare_control_ratio(
-            system_optimal_link_flow
+            system_optimal_link_flow,
+            tolerance
         )
         return UpperControlRatio(constants, variables)
 
 
 def _create_solver(network: Network, demand: TravelDemand,
                    link_cost_function: LinkCostFunction,
-                   tolerance, max_iterations) -> Solver:
+                   tolerance, max_iterations, **kwargs) -> Solver:
+    try:
+        large_initial_step = kwargs.pop('large_initial_step')
+    except KeyError:
+        large_initial_step = True
     return Solver(
         LineSearchStepSize(
-            link_cost_function
+            link_cost_function,
+            large_initial_step
         ),
         ShortestPathSearchDirection(
             network,
@@ -107,5 +145,6 @@ def _create_solver(network: Network, demand: TravelDemand,
         ),
         link_cost_function,
         tolerance=tolerance,
-        max_iterations=max_iterations
+        max_iterations=max_iterations,
+        **kwargs
     )

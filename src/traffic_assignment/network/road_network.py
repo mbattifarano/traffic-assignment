@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from itertools import count
 from typing import Iterable, List
 from toolz import memoize
+from shelve import DbfilenameShelf
 
 import networkx as nx
 import numpy as np
@@ -51,6 +52,15 @@ class Network(ABC):
         pass
 
 
+def path_incidences_key(args, kwargs):
+    road_network, travel_demand = args
+    return str(hash((
+        tuple(road_network.nodes),
+        tuple(road_network.links),
+        travel_demand,
+    )))
+
+
 class RoadNetwork(Network):
     NODE_KEY = 'node'
     LINK_KEY = 'link'
@@ -84,8 +94,10 @@ class RoadNetwork(Network):
         """Create link-path and path-od incidence matrices"""
         all_paths = self.get_all_paths(demand)
         n_paths = self.number_of_paths(demand)
-        link_path = np.zeros((self.number_of_links(), n_paths))
-        path_od = np.zeros((n_paths, demand.number_of_od_pairs))
+        link_path = np.zeros((self.number_of_links(), n_paths),
+                             dtype=np.uint8)
+        path_od = np.zeros((n_paths, demand.number_of_od_pairs),
+                           dtype=np.uint8)
         link_index = {link: i for i, link in enumerate(self.links)}
         od_index = {(d.origin, d.destination): i
                     for i, d in enumerate(demand.demand)}

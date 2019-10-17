@@ -23,7 +23,7 @@ class TNTPTrips:
         lines = contents.splitlines()
         meta_data = MetaData.from_lines(lines)
         items = dropwhile(common.is_header, lines)
-        trips = filter(is_non_zero_trip, Trip.from_lines(items))
+        trips = sorted(filter(is_non_zero_trip, Trip.from_lines(items)))
         return TNTPTrips(meta_data, list(trips))
 
     def to_demand(self, network: Network) -> TravelDemand:

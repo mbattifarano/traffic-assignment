@@ -21,14 +21,22 @@ class Solver:
     max_iterations: int = 100
     tolerance: float = 1e-15
     timer: Timer = Timer()
+    report_interval: int = 1000
+    initial_point: np.ndarray = None
 
     def __post_init__(self):
         self.iterations.append(self.initial_iteration())
 
     def initial_iteration(self) -> Iteration:
         self.timer.start()
-        cost = self.link_cost_function.link_cost(0.0)
-        link_flow = self.search_direction.minimum_point(cost, 0.0)
+        if self.initial_point is None:
+            print("Starting from free flow travel cost.")
+            cost = self.link_cost_function.link_cost(0.0)
+            link_flow = self.search_direction.minimum_point(cost, 0.0)
+        else:
+            print("Warm start.")
+            cost = self.link_cost_function.link_cost(self.initial_point)
+            link_flow = self.initial_point
         return Iteration(
             iteration=0,
             cost=cost,
@@ -68,6 +76,11 @@ class Solver:
             duration=self.timer.time_elapsed()
         )
 
+    def log_progress(self):
+        i = self.iteration.iteration
+        if (i == 1) or ((i > 0) and (i % self.report_interval == 0)):
+            print(f"iteration {i}: relative gap = {self.iteration.gap:g} (absolute gap = {self.iteration.absolute_gap:g})")
+
     def objective_value(self, link_flow: np.ndarray) -> float:
         return self.link_cost_function.integral_link_cost(link_flow).sum()
 
@@ -88,9 +101,13 @@ class Solver:
 
     def solve(self) -> Iteration:
         while self._continue():
+            self.log_progress()
             next_iteration = self.update(self.iteration)
             self.iterations.append(next_iteration)
         return self.iteration
+
+    def best_iteration(self):
+        return min(self.iterations, key=lambda it: it.gap)
 
 
 @dataclass(frozen=True)
@@ -103,3 +120,7 @@ class Iteration:
     best_lower_bound: float
     gap: float
     duration: float
+
+    @property
+    def absolute_gap(self):
+        return -np.dot(self.cost, self.search_direction)

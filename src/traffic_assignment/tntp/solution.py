@@ -15,7 +15,7 @@ class TNTPSolution:
     @classmethod
     def read_text(cls, contents: str) -> TNTPSolution:
         lines = filter(is_data_line, contents.splitlines())
-        links = list(map(SolutionLink.from_line, lines))
+        links = sorted(map(SolutionLink.from_line, lines))
         return TNTPSolution(links)
 
     def link_flow(self) -> np.array:

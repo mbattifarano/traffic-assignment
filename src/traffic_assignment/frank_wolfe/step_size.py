@@ -13,19 +13,22 @@ class StepSize(ABC):
         pass
 
 
+@dataclass(frozen=True)
 class MonotoneDecreasingStepSize(StepSize):
+    offset: int = 2
 
     def step(self, k: int, x=None, d=None) -> float:
-            return 2 / (k + 2)
+            return 2 / (k + self.offset)
 
 
 @dataclass(frozen=True)
 class LineSearchStepSize(StepSize):
     cost: LinkCostFunction
+    large_initial_step: bool = True
 
     def step(self, k: int, x: np.ndarray, d: np.ndarray) -> float:
         """Take a large first step. Then find optimal step size."""
-        if k == 0:
+        if self.large_initial_step and (k == 0):
             return 1.0
         else:
             return LineSearcher(self.cost, x, d).find_step_size()

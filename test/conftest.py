@@ -11,6 +11,7 @@ from traffic_assignment.link_cost_function.linear import LinearLinkCostFunction
 from traffic_assignment.network.demand import Demand, TravelDemand
 from traffic_assignment.network.road_network import RoadNetwork
 from traffic_assignment.tntp.solver import TNTPProblem
+from warnings import warn
 
 FIXTURES_DIR = os.path.join('test', 'fixtures')
 
@@ -174,6 +175,7 @@ names = [
 def transportation_network(request):
     directory = TransportationNetworksDirectories.parent_directory
     name = request.param
+    print(f"Reading the {name} network.")
     return TNTPProblem.from_directory(
         os.path.join(directory, name),
     )

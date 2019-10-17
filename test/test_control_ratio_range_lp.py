@@ -5,8 +5,10 @@ from traffic_assignment.control_ratio_range.utils import (NetworkParameters,
                                                           Variables,
                                                           Constants)
 
+from warnings import warn
 
 def test_upper_control_ratio(braess_so_solution, braess_demand, braess_network,
+
                              braess_cost_function, braess_so_cost_function):
     params = NetworkParameters.from_network(braess_network, braess_demand)
     variables = Variables.from_network_parameters(params)
@@ -24,6 +26,12 @@ def test_upper_control_ratio(braess_so_solution, braess_demand, braess_network,
     assert np.allclose(variables.fleet_link_flow.value, braess_so_solution)
     assert np.allclose(variables.user_link_flow.value,
                        np.zeros_like(braess_so_solution))
+    stats = problem.solver_stats
+    warn(f"""
+    solver terminated with status '{problem.status}' in {stats.solve_time} (s).
+    setup time: {stats.setup_time} (s)
+    number of iterations: {stats.num_iters}
+    """)
 
 
 def test_lower_control_ratio(braess_ue_solution, braess_demand, braess_network,

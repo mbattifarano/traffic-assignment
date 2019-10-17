@@ -3,12 +3,15 @@ from dataclasses import dataclass
 import cvxpy as cp
 
 from .utils import Constants, Variables
+from traffic_assignment.utils import Timer
+from warnings import warn
 
 
 @dataclass
 class UpperControlRatio:
     constants: Constants
     variables: Variables
+    tolerance: float = 1e-5
 
     def objective(self):
         return cp.sum(self.variables.fleet_demand)
@@ -32,10 +35,15 @@ class UpperControlRatio:
         ]
 
     def problem(self):
-        return cp.Problem(
+        timer = Timer()
+        print("Creating problem.")
+        timer.start()
+        p = cp.Problem(
             self.sense(self.objective()),
             self.constraints()
         )
+        print(f"Problem created in {timer.time_elapsed():0.2f} (s).")
+        return p
 
 
 class LowerControlRatio(UpperControlRatio):
