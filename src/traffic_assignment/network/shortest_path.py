@@ -7,6 +7,32 @@ from heapq import heappush, heappop
 from itertools import count
 
 
+def _parent_children(graph, node):
+    return node, iter(graph[node])
+
+
+def all_paths_shorter_than(graph, source, target, weight, cutoff):
+    visited = [source]
+    stack = [_parent_children(graph, source)]
+
+    def cost_of(node):
+        path = visited + [node]
+        path_cost = sum(graph.edges[e][weight] for e in zip(path, path[1:]))
+        return path_cost
+    while stack:
+        parent, children = stack[-1]
+        child = next(children, None)
+        if child is None:
+            stack.pop()
+            visited.pop()
+        elif cost_of(child) <= cutoff:
+            if child == target:
+                yield visited + [target]
+            elif child not in visited:
+                visited.append(child)
+                stack.append(_parent_children(graph, child))
+
+
 def single_source_dijkstra(G, source, targets=None, weight='weight'):
     """Compute shortest paths and lengths in a weighted graph G.
 

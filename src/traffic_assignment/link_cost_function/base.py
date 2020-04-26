@@ -13,3 +13,7 @@ class LinkCostFunction(ABC):
     @abstractmethod
     def integral_link_cost(self, link_flow: ArrayOrFloat) -> np.ndarray:
         pass
+
+    @abstractmethod
+    def derivative_link_cost(self, link_flow: ArrayOrFloat) -> np.ndarray:
+        pass

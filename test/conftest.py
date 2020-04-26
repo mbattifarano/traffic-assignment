@@ -11,6 +11,10 @@ from traffic_assignment.link_cost_function.linear import LinearLinkCostFunction
 from traffic_assignment.network.demand import Demand, TravelDemand
 from traffic_assignment.network.road_network import RoadNetwork
 from traffic_assignment.tntp.solver import TNTPProblem
+from traffic_assignment.mac_shp.network import graph_from_shp, travel_demand as shp_travel_demand
+from dataclasses import dataclass
+from typing import MutableMapping, Iterable
+import pickle
 from warnings import warn
 
 FIXTURES_DIR = os.path.join('test', 'fixtures')
@@ -179,3 +183,93 @@ def transportation_network(request):
     return TNTPProblem.from_directory(
         os.path.join(directory, name),
     )
+
+
+@pytest.fixture(scope='session')
+def pittsburgh_shp():
+    return os.path.join(
+        FIXTURES_DIR,
+        'pittsburgh-network',
+    )
+
+
+@dataclass
+class NumpyFileCache(MutableMapping):
+    directory: str
+
+    def __post_init__(self):
+        try:
+            os.mkdir(self.directory)
+        except FileExistsError:
+            pass
+
+    def _extension(self):
+        return "npy"
+
+    def _file_of(self, k):
+        return f"{self.directory}/{k}.{self._extension()}"
+
+    def __setitem__(self, k, v) -> None:
+        np.save(self._file_of(k), v)
+
+    def __delitem__(self, k) -> None:
+        os.remove(self._file_of(k))
+
+    def __getitem__(self, k):
+        try:
+            return np.load(self._file_of(k))
+        except FileNotFoundError:
+            raise KeyError(k)
+
+    def __len__(self) -> int:
+        return len(os.listdir(self.directory))
+
+    def __iter__(self) -> Iterable:
+        return iter(os.listdir(self.directory))
+
+
+@dataclass
+class PickleFileCache(NumpyFileCache):
+
+    def _extension(self):
+        return "pkl"
+
+    def __setitem__(self, key, value):
+        with open(self._file_of(key), 'wb') as fp:
+            pickle.dump(value, fp)
+
+    def __getitem__(self, key):
+        try:
+            with open(self._file_of(key), 'rb') as fp:
+                return pickle.load(fp)
+        except FileNotFoundError:
+            raise KeyError(key)
+
+
+
+@pytest.fixture(scope='session')
+def numpy_cache():
+    return NumpyFileCache('test/artifacts/numpy_cache')
+
+
+@pytest.fixture(scope='session')
+def pickle_cache():
+    return PickleFileCache('test/artifacts/path_set_cache')
+
+
+@pytest.fixture(scope="session")
+def pittsburgh_graph(pittsburgh_shp):
+    return graph_from_shp(pittsburgh_shp)
+
+
+@pytest.fixture(scope="session")
+def pittsburgh_road_network(pittsburgh_graph):
+    return RoadNetwork(pittsburgh_graph)
+
+
+@pytest.fixture(scope="session")
+def pittsburgh_demand(pittsburgh_shp, pittsburgh_road_network):
+    od_data_dir = os.path.join(pittsburgh_shp, 'ODmatrix')
+    return TravelDemand(list(shp_travel_demand(pittsburgh_road_network,
+                                           od_data_dir)))
+

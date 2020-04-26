@@ -1,10 +1,10 @@
 from traffic_assignment.link_cost_function.bpr import (
     BPRLinkCostFunction, BPRMarginalLinkCostFunction
 )
-
+import time
 import numpy as np
 
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis.strategies import builds, tuples, floats, integers, one_of, none
 from hypothesis.extra.numpy import arrays
 
@@ -45,8 +45,10 @@ marginal_link_cost_link_flow_pairs = number_of_links.flatmap(
 
 
 @given(link_cost_link_flow_pairs)
+@settings(deadline=None)
 def test_bpr_link_cost_function(link_cost_link_flow_pair):
     bpr, link_flow = link_cost_link_flow_pair
+    t0 = time.time()
     actual_cost = bpr.link_cost(link_flow)
     assert actual_cost.shape == link_flow.shape
     assert (actual_cost >= 0).all()
@@ -57,6 +59,7 @@ def test_bpr_link_cost_function(link_cost_link_flow_pair):
 
 
 @given(marginal_link_cost_link_flow_pairs)
+@settings(deadline=None)
 def test_bpr_marginal_link_cost_function(link_cost_link_flow_pair):
     marginal_bpr, link_flow = link_cost_link_flow_pair
     actual_cost = marginal_bpr.link_cost(link_flow)

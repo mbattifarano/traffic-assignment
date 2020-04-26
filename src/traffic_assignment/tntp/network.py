@@ -52,13 +52,14 @@ class TNTPNetwork:
             condense_array(links.power),
         )
 
-    def to_marginal_link_cost_function(self) -> LinkCostFunction:
+    def to_marginal_link_cost_function(self, fleet_link_flow=None) -> LinkCostFunction:
         links = self._links_as_columns()
         return BPRMarginalLinkCostFunction(
             links.free_flow_time,
             links.capacity,
             condense_array(links.b),
             condense_array(links.power),
+            fleet_link_flow
         )
 
     def to_networkx_graph(self) -> nx.DiGraph:

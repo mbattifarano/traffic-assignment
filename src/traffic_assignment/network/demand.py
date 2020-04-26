@@ -19,6 +19,10 @@ class TravelDemand:
     def __post_init__(self):
         self.origin_based_index = _reindex_demand(self.demand)
         self.demand = tuple(sorted(self.demand))
+        self.origins = [d.origin.name
+                        for d in self.demand]
+        self.destinations = [d.destination.name
+                             for d in self.demand]
 
     def __hash__(self):
         return hash(tuple(self.demand))

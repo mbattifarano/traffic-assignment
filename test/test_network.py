@@ -1,6 +1,6 @@
 from traffic_assignment.network.road_network import RoadNetwork
 from traffic_assignment.network.demand import Demand, TravelDemand
-from traffic_assignment.network.path import Path
+from traffic_assignment.network.path import Path, PathSchema
 
 import numpy as np
 import networkx as nx
@@ -50,6 +50,8 @@ def test_path(path):
     for i, (u, v) in enumerate(path.edges):
         assert u == path.nodes[i]
         assert v == path.nodes[i+1]
+    schema = PathSchema()
+    assert path == schema.load(schema.dump(path)), list(path.edges)
 
 
 @given(random_network)
@@ -132,11 +134,25 @@ def test_braess_network_edges(braess_network):
     assert edges == expected_edges
 
 
+def row_set(a):
+    return set(map(tuple, a))
+
+
+def column_set(a):
+    """Return the set of columns of a"""
+    return row_set(a.T)
+
+
 def test_path_incidences(braess_network, braess_demand_augmented):
     link_path, path_od, path_index = braess_network.path_incidences(braess_demand_augmented)
+    path_set = set(path_index.keys())
     assert len(path_index) == 5
     assert link_path.shape == (5, 5)
     assert path_od.shape == (5, 2)
+    link_path_set, path_od_set = braess_network.path_set_incidences(braess_demand_augmented, path_set)
+    # test that that the matrices are the same up to column (path) ordering
+    assert column_set(link_path) == column_set(link_path_set.toarray())
+    assert row_set(path_od) == row_set(path_od_set.toarray())
     link_index = {(link.origin.name, link.destination.name): i
                   for i, link in enumerate(braess_network.links)}
     od_index = {(d.origin.name, d.destination.name): i
@@ -147,3 +163,14 @@ def test_path_incidences(braess_network, braess_demand_augmented):
         orgn = path.nodes[0]
         dest = path.nodes[-1]
         assert path_od[i, od_index[(orgn, dest)]] == 1
+
+
+def test_least_cost_path_indices(braess_network, braess_demand):
+    link_cost = np.ones(5)
+    link_path, trip_path = braess_network.least_cost_path_indices(
+        braess_demand,
+        link_cost
+    )
+    assert link_path.shape == (5, 2)
+    assert trip_path.shape == (1, 2)
+

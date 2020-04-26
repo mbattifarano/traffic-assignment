@@ -60,7 +60,10 @@ def search_link_flow_pairs(draw):
 @settings(suppress_health_check=(HealthCheck.too_slow,))
 def test_shortest_path_search_direction(data):
     search, cost, x = data
-    actual_search_direction = search.search_direction(cost, x)
+    actual_search_direction, used_paths = search.search_direction(cost, x)
+    network = search.network
+    # TODO: test used path set
+
     assert actual_search_direction.shape == x.shape
     # actual_search_direction = y - x, recover y, the shortest path assignment
     y = actual_search_direction + x

@@ -20,11 +20,16 @@ from .trips import TNTPTrips
 
 from traffic_assignment.control_ratio_range.utils import (NetworkParameters,
                                                           Variables,
+                                                          HeuristicVariables,
                                                           Constants,
+                                                          HeuristicConstants,
                                                           ControlRatioSchema,
                                                           ProblemData)
 from traffic_assignment.control_ratio_range.lp import (UpperControlRatio,
-                                                       LowerControlRatio)
+                                                       LowerControlRatio,
+                                                       MinimumFleetControlRatio,
+                                                       RestrictedLowerControlRatio,
+                                                       HeuristicStatus)
 from traffic_assignment.utils import FileCache
 from toolz import memoize
 
@@ -90,7 +95,7 @@ class TNTPProblem:
         return self._solver(self.network.to_marginal_link_cost_function(),
                             tolerance, max_iterations, **kwargs)
 
-    @memoize(cache=problem_data_cache, key=problem_cache_key)
+    #@memoize(cache=problem_data_cache, key=problem_cache_key)
     def _prepare_control_ratio(self, target_link_flow, tolerance=1e-8):
         road_network = self.road_network()
         link_cost = self.network.to_link_cost_function()
@@ -119,12 +124,53 @@ class TNTPProblem:
         print(f"Prepared problem data in {timer.time_elapsed():0.2f} (s).")
         return LowerControlRatio(constants, variables)
 
-    def upper_control_ratio(self, system_optimal_link_flow, tolerance=1e-2):
+    def restricted_lower_control_ratio(self, ue_link_flow, mcr_fleet_demand, tolerance=1e-8):
+        timer = Timer()
+        print("Creating problem data.")
+        timer.start()
+        constants, variables = self._prepare_control_ratio(
+            ue_link_flow,
+            tolerance
+        )
+        print(f"Prepared problem data in {timer.time_elapsed():0.2f} (s).")
+        return RestrictedLowerControlRatio(
+            constants,
+            variables,
+            mcr_fleet_demand=mcr_fleet_demand,
+        )
+
+    def upper_control_ratio(self, system_optimal_link_flow, tolerance=1e-4):
         constants, variables = self._prepare_control_ratio(
             system_optimal_link_flow,
             tolerance
         )
         return UpperControlRatio(constants, variables)
+
+    def _prepare_fomcr_constants(self, system_optimal_link_flow,
+                                 fleet_path_set):
+        net = self.road_network()
+        link_cost = self.network.to_link_cost_function()
+        demand = self.travel_demand()
+        constants = HeuristicConstants.from_network(
+            net,
+            demand,
+            link_cost,
+            fleet_path_set,
+            system_optimal_link_flow,
+        )
+        return constants
+
+    def minimum_fleet_control_ratio(self, system_optimal_link_flow,
+                                    fleet_path_set):
+        constants = self._prepare_fomcr_constants(system_optimal_link_flow,
+                                                  fleet_path_set)
+        variables = HeuristicVariables.from_constants(constants)
+        return MinimumFleetControlRatio(
+            self.road_network(),
+            self.travel_demand(),
+            constants,
+            variables,
+        )
 
 
 def _create_solver(network: Network, demand: TravelDemand,
