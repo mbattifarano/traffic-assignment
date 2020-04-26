@@ -160,10 +160,23 @@ def unwind_path(predecessors, s, t):
     return np.flip(path)
 
 
-@numba.jit(nopython=True, parallel=True)
+@numba.jit(nopython=True)
+def assign_all_to_links(link_index, paths, volumes, link_flow):
+    for i in range(len(paths)):
+        path = paths[i]
+        volume = volumes[i]
+        for j in range(len(path) - 1):
+            u = path[j]
+            v = path[j+1]
+            link_i = link_index[u, v]
+            link_flow[link_i] += volume
+    return link_flow
+
+
+@numba.jit(nopython=True)  # TODO enable parallel after ubuntu upgrade
 def assign_to_links(link_index, n_links, path, volume):
     link_flow = np.zeros(n_links)
-    for ui in numba.prange(len(path) - 1):
+    for ui in range(len(path) - 1):
         u = path[ui]
         v = path[ui+1]
         link_i = link_index[u, v]

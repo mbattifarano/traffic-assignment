@@ -3,19 +3,24 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from itertools import count
 from collections import defaultdict
-from typing import Iterable, NamedTuple, Set, Tuple, Optional
+from typing import Iterable, NamedTuple, Set, Tuple, Optional, List
 from toolz import memoize
 
 import networkx as nx
+import time
 import numpy as np
 from scipy.sparse import dok_matrix as sparse_matrix
+
+import igraph as ig
 
 from .demand import TravelDemand
 from .link import Link
 from .node import Node
 from .path import Path
 from .shortest_path import single_source_dijkstra, all_paths_shorter_than
-from .graph import reindex_graph, to_igraph, shortest_paths_igraph, NX_ID, shortest_paths_nx_via_scipy
+from .graph import shortest_paths_igraph, NX_ID, assign_all_to_links
+import numba
+
 
 class Network(ABC):
 
@@ -82,6 +87,22 @@ class PathAssignment(NamedTuple):
     used_paths: frozenset
 
 
+def _to_igraph(nodes: List[Node], links: List[Link]):
+    N = len(nodes)
+    g = ig.Graph(directed=True)
+    g['index_node'] = np.array([n.name for n in nodes], dtype=np.uint16)
+    g['node_index'] = {n: i for i, n in enumerate(g['index_node'])}
+    link_matrix = -np.ones((N, N), dtype=np.uint16)
+    g.add_vertices(N)
+    for link in links:
+        i = link.origin.id
+        j = link.destination.id
+        g.add_edges([(i, j)])
+        link_matrix[i, j] = link.id
+    g['link_matrix'] = link_matrix
+    return g
+
+
 class RoadNetwork(Network):
     NODE_KEY = 'node'
     LINK_KEY = 'link'
@@ -89,14 +110,13 @@ class RoadNetwork(Network):
 
     def __init__(self, graph: nx.DiGraph):
         self.graph = nx.freeze(graph)
-        self._igraph = to_igraph(self.graph, self.WEIGHT_KEY)
         self.nodes = list(self._build_nodes())
         self.links = list(self._build_links())
         self._link_index = {
             link: i
             for i, link in enumerate(self.links)
         }
-        self._use_igraph = True
+        self._igraph = _to_igraph(self.nodes, self.links)
 
     def number_of_links(self) -> int:
         return len(self.links)
@@ -208,6 +228,30 @@ class RoadNetwork(Network):
 
     def shortest_path_assignment(self, demand: TravelDemand,
                                  travel_costs: np.ndarray) -> PathAssignment:
+        self._igraph.es[self.WEIGHT_KEY] = travel_costs
+        n_links = self.number_of_links()
+        link_flow = np.zeros(n_links)
+        _node_index = self._igraph['node_index']
+        _link_matrix = self._igraph['link_matrix']
+        for orgn, dest_volumes in demand.origin_based_index.items():
+            s = _node_index[orgn]
+            ts, vs = zip(*dest_volumes.items())
+            ts = [_node_index[t] for t in ts]
+            vs = np.array(vs)
+            _paths = self._igraph.get_shortest_paths(
+                s, ts, weights=self.WEIGHT_KEY
+            )
+            paths = numba.typed.List(
+                np.array(p, dtype=np.uint16)
+                for p in _paths
+            )
+            assign_all_to_links(
+                _link_matrix,
+                paths,
+                vs,
+                link_flow,
+            )
+        return PathAssignment(link_flow, frozenset())
         #self.set_link_costs(travel_costs)
         #link_flow = np.zeros(self.number_of_links())
         #od_pairs = {(d.origin.name,  d.destination.name): d.volume
@@ -220,36 +264,40 @@ class RoadNetwork(Network):
         #    link_flow = self._assign_path_flow_to_links(path, od_pairs[u, v],
         #                                                link_flow)
         #return PathAssignment(link_flow, frozenset())
-        if self._use_igraph:
-            self._igraph.es[self.WEIGHT_KEY] = travel_costs
-            _vertex_names = self._igraph.vs[NX_ID]
-        else:
-            self.set_link_costs(travel_costs)
-        link_flow = np.zeros(self.number_of_links())
-        used_paths = set()
-        for orgn, dest_volumes in demand.origin_based_index.items():
-            targets = list(dest_volumes.keys())
-            if self._use_igraph:
-                paths = shortest_paths_igraph(self._igraph, str(orgn),
-                                              list(map(str, targets)),
-                                              self.WEIGHT_KEY,
-                                              names=_vertex_names)
-            else:
-                _, paths = single_source_dijkstra(
-                    self.graph, orgn, targets, weight=self.WEIGHT_KEY
-                )
-            for dest, volume in dest_volumes.items():
-                try:
-                    shortest_path = Path(paths[dest])
-                    #used_paths.add(shortest_path)
-                except KeyError:
-                    raise nx.NetworkXNoPath(f"No path from {orgn} to {dest}.")
-                link_flow = self._assign_path_flow_to_links(
-                    shortest_path,
-                    volume,
-                    link_flow
-                )
-        return PathAssignment(link_flow, frozenset(used_paths))
+        #if self._use_igraph:
+        #    self._igraph.es[self.WEIGHT_KEY] = travel_costs
+        #    _vertex_names = self._igraph.vs[NX_ID]
+        #else:
+        #    self.set_link_costs(travel_costs)
+        #link_flow = np.zeros(self.number_of_links())
+        #used_paths = set()
+        #_igraph_time = 0
+        #for orgn, dest_volumes in demand.origin_based_index.items():
+        #    targets = list(dest_volumes.keys())
+        #    if self._use_igraph:
+        #        t0 = time.time()
+        #         paths = shortest_paths_igraph(self._igraph, str(orgn),
+        #                                       list(map(str, targets)),
+        #                                       self.WEIGHT_KEY,
+        #                                       names=_vertex_names)
+        #         _igraph_time += (time.time() - t0)
+        #     else:
+        #         _, paths = single_source_dijkstra(
+        #             self.graph, orgn, targets, weight=self.WEIGHT_KEY
+        #         )
+        #     for dest, volume in dest_volumes.items():
+        #         try:
+        #             shortest_path = Path(paths[dest])
+        #             #used_paths.add(shortest_path)
+        #         except KeyError:
+        #             raise nx.NetworkXNoPath(f"No path from {orgn} to {dest}.")
+        #         link_flow = self._assign_path_flow_to_links(
+        #             shortest_path,
+        #             volume,
+        #             link_flow
+        #         )
+        # print(f"igraph time: {_igraph_time:0.4f}s")
+        # return PathAssignment(link_flow, frozenset(used_paths))
 
     def _shortest_path(self, origin: Node, destination: Node) -> Path:
         return Path(nx.shortest_path(
