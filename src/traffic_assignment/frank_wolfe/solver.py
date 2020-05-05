@@ -67,15 +67,12 @@ class Solver:
         i = iteration.iteration
         link_flow = iteration.link_flow
         cost = self.link_cost_function.link_cost(link_flow)
-        t0=time.time()
         direction, path_set = self.search_direction.search_direction(cost, link_flow)
-        print(f"search direction took: {time.time()- t0:0.4f}s")
         self.path_set.update(path_set)
         step = self.step_size.step(i, link_flow, direction)
         new_link_flow = iteration.link_flow + step * direction
         abs_gap, rel_gap, best_lower_bound = self._relative_gap(cost, direction,
                                                    new_link_flow)
-        #print(f"{i}: cost in [{cost.min()}, {cost.max()}]; direction in [{direction.min()}, {direction.max()}]; step={step}; gap={gap}; best bound={best_lower_bound}")
         return Iteration(
             iteration=i + 1,
             cost=cost,

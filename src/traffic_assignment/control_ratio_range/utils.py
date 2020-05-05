@@ -186,6 +186,7 @@ class HeuristicConstants(NamedTuple):
         cost_gradient = link_cost.derivative_link_cost(target_link_flow)
         marginal_cost = cost + np.multiply(target_link_flow, cost_gradient)
 
+        print("building path set")
         if known_paths is None:
             known_paths = list(
                 map(first,
@@ -196,9 +197,11 @@ class HeuristicConstants(NamedTuple):
                 )
             )
 
+        print("building path indcidence matrices")
         link_path_incidence, path_od_incidence = network.path_set_incidences(demand, known_paths)
         trip_path_incidence = path_od_incidence.T
 
+        print("finding usable paths")
         user_paths = cls._useable_paths(known_paths, cost,
                                         link_path_incidence,
                                         trip_path_incidence,
@@ -207,7 +210,7 @@ class HeuristicConstants(NamedTuple):
                                          link_path_incidence,
                                          trip_path_incidence,
                                          path_cost_tolerance)
-
+        print("returning constants")
         return HeuristicConstants(
             target_link_flow=target_link_flow,
             total_demand=demand.to_array(),

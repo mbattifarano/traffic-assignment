@@ -45,7 +45,6 @@ def test_road_network_from_shp(pittsburgh_graph):
         assert edge == (link.origin.name, link.destination.name)
 
 
-
 def test_capacity_array(pittsburgh_graph):
     capacity = net.to_capacity(pittsburgh_graph)
     assert len(capacity) == pittsburgh_graph.number_of_edges()

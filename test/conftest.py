@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import MutableMapping, Iterable
 import pickle
 from warnings import warn
+import time
 
 FIXTURES_DIR = os.path.join('test', 'fixtures')
 
@@ -258,18 +259,42 @@ def pickle_cache():
 
 
 @pytest.fixture(scope="session")
-def pittsburgh_graph(pittsburgh_shp):
-    return graph_from_shp(pittsburgh_shp)
+def pittsburgh_graph(pittsburgh_shp, pickle_cache):
+    key = 'pittsburgh_graph'
+    try:
+        t0 = time.time()
+        graph = pickle_cache[key]
+        print(f"loaded graph from cache in {time.time()-t0:0.4f}s")
+    except KeyError:
+        graph = graph_from_shp(pittsburgh_shp)
+        pickle_cache[key] = graph
+    return graph
 
 
 @pytest.fixture(scope="session")
-def pittsburgh_road_network(pittsburgh_graph):
-    return RoadNetwork(pittsburgh_graph)
+def pittsburgh_road_network(pittsburgh_graph, pickle_cache):
+    key = 'pittsburgh_road_network'
+    try:
+        t0 = time.time()
+        net = pickle_cache[key]
+        print(f"loaded network from cache in {time.time()-t0:0.4f}s")
+        return net
+    except KeyError:
+        net = RoadNetwork(pittsburgh_graph)
+        pickle_cache[key] = net
+    return net
 
 
 @pytest.fixture(scope="session")
-def pittsburgh_demand(pittsburgh_shp, pittsburgh_road_network):
-    od_data_dir = os.path.join(pittsburgh_shp, 'ODmatrix')
-    return TravelDemand(list(shp_travel_demand(pittsburgh_road_network,
-                                           od_data_dir)))
+def pittsburgh_demand(pittsburgh_shp, pittsburgh_road_network, pickle_cache):
+    key = 'pittsburgh_demand'
+    try:
+        t0 = time.time()
+        demand = pickle_cache[key]
+        print(f"loaded demand from cache in {time.time()-t0:0.4f}s")
+    except KeyError:
+        od_data_dir = os.path.join(pittsburgh_shp, 'ODmatrix')
+        demand = TravelDemand(list(shp_travel_demand(pittsburgh_road_network, od_data_dir)))
+        pickle_cache[key] = demand
+    return demand
 

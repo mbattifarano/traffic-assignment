@@ -295,11 +295,11 @@ class MinimumFleetControlRatio:
 
     def heuristic(self, solver=cp.GUROBI):
         done = False
-        initial_add_paths = self.paths_to_add(self.constants.target_link_flow)
-        if initial_add_paths and False:
-            print(f"Adding initial paths.")
-            self.update_lp(HeuristicStatus.ADD_UNUSABLE_PATHS,
-                           initial_add_paths)
+        #initial_add_paths = self.paths_to_add(self.constants.target_link_flow)
+        #if initial_add_paths and False:
+        #    print(f"Adding initial paths.")
+        #    self.update_lp(HeuristicStatus.ADD_UNUSABLE_PATHS,
+        #                   initial_add_paths)
         while not done:
             lp = self.problem()
             result = lp.solve(solver=solver)

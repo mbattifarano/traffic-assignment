@@ -12,11 +12,89 @@ from traffic_assignment.frank_wolfe.search_direction import ShortestPathSearchDi
 from traffic_assignment.frank_wolfe.step_size import LineSearchStepSize
 from traffic_assignment.frank_wolfe.solver import Solver
 from traffic_assignment.network.graph import shortest_paths_scipy, unwind_path_to_link_flow, assign_to_links, assign_all_to_links
+from traffic_assignment.network.shortest_path import _igraph_to_numba_weights, _igraph_to_numba_adjdict, _all_paths_shorter_than
 from scipy.sparse import csgraph
+from traffic_assignment.utils import Timer
+
+from traffic_assignment.control_ratio_range.lp import MinimumFleetControlRatio, HeuristicStatus
+from traffic_assignment.control_ratio_range.utils import HeuristicConstants, HeuristicVariables
+import cvxpy as cp
 
 import networkx as nx
 import numpy as np
 import numba
+
+
+def test_pittsburgh_fo_mcr(pittsburgh_graph, pittsburgh_road_network, pittsburgh_demand, numpy_cache):
+    so_link_flow_key = f"pittsburgh-link_flow-so"
+    so_link_flow = numpy_cache.get(so_link_flow_key).astype(np.float64)
+    graph = pittsburgh_graph
+    network = pittsburgh_road_network
+    demand = pittsburgh_demand
+    print("building link cost function")
+    link_cost = BPRLinkCostFunction(
+        capacity=to_capacity(graph),
+        free_flow_travel_time=to_free_flow_travel_time(graph),
+    )
+    print("building heuristic constants")
+    constants = HeuristicConstants.from_network(
+        network=network,
+        demand=demand,
+        link_cost=link_cost,
+        known_paths=None,
+        target_link_flow=so_link_flow,
+    )
+    print("saving constants")
+    constants.save('test/artifacts/pittsburgh-network-fomcr-constants')
+    print("creating variables")
+    variables = HeuristicVariables.from_constants(constants)
+    print("creating problem")
+    mfcr = MinimumFleetControlRatio(
+        network=network,
+        demand=demand,
+        constants=constants,
+        variables=variables,
+    )
+    print(f"Fleet paths: {mfcr.constants.fleet_paths.sum()} usable; {(~mfcr.constants.fleet_paths).sum()} un-usable")
+    timer = Timer().start()
+    _bin_edges = np.linspace(0.0, 1.0, 11)
+    _bin_labels = [f"[{a:0.1f}, {b:0.1f}]" for a, b in zip(_bin_edges, _bin_edges[1:])]
+    upper_bounds = []
+    lower_bounds = []
+    for i, (status, value) in enumerate(mfcr.heuristic()):
+        if status is HeuristicStatus.ADD_UNUSABLE_PATHS:
+            upper_bounds = []
+            lower_bounds.append((value, i))
+        else:
+            upper_bounds.append((value, i))
+        fleet_od_volume = mfcr.fleet_demand.value
+        user_od_volume = mfcr.user_demand.value
+        _control_ratio = 100 * mfcr.variables.fleet_path_flow.value.sum() / constants.total_demand.sum()
+        print(f"{i+1} ({timer.time_elapsed():0.2f} seconds): LP terminated with {status} and objective value {100 *value:0.2f}% and control ratio {(_control_ratio):0.4f}%")
+        fleet_marginal_path_cost = (mfcr.constants.link_path_incidence.T @ (
+                mfcr.constants.link_cost + cp.multiply(mfcr.fleet_link_flow, mfcr.constants.link_cost_gradient)
+        )).value
+
+        assert np.allclose(fleet_marginal_path_cost, mfcr.fleet_marginal_path_cost.value)
+        assert (abs((fleet_od_volume + user_od_volume - constants.total_demand)) <= 0.05).all()
+        assert (abs((mfcr.fleet_link_flow + mfcr.user_link_flow - mfcr.constants.target_link_flow).value) <= 0.05).all()
+        vi = cp.multiply(
+            mfcr.variables.fleet_path_flow,
+            mfcr.fleet_marginal_path_cost - mfcr.min_fleet_path_costs
+        ).value
+        print(f"vi in range [{vi.min()}, {vi.max()}]")
+        assert (abs(vi) <= 1e-3).all(),  f"vi in range [{vi.min()}, {vi.max()}]"
+
+        fleet_od_ratio = fleet_od_volume / constants.total_demand
+        counts, _ = np.histogram(fleet_od_ratio, _bin_edges)
+        _print_hist = "\n".join(
+            f"{_bin}: {_count:d}" for _bin, _count in zip(_bin_labels, counts))
+        # print(f"fleet ratios:\n{_print_hist}")
+
+    print(f"Fleet paths: {mfcr.constants.fleet_paths.sum()} usable; {(~mfcr.constants.fleet_paths).sum()} un-usable; total = {len( mfcr.constants.known_paths)}")
+    best_value, best_i = min(upper_bounds)
+    print(f"Best objective value {best_value} on iteration {best_i}")
+    print(f"Lower bounds {lower_bounds}")
 
 
 def test_pittsburgh_so(pittsburgh_shp, numpy_cache):
@@ -30,6 +108,7 @@ def test_pittsburgh_so(pittsburgh_shp, numpy_cache):
     network = RoadNetwork(graph)
     print(f"building travel demand")
     demand = TravelDemand(list(travel_demand(network, od_data_dir)))
+
     print(f"building link cost function")
     capacity = to_capacity(graph)
     assert np.isfinite(capacity).all()
@@ -57,14 +136,45 @@ def test_pittsburgh_so(pittsburgh_shp, numpy_cache):
         search_direction=search_direction,
         link_cost_function=so_link_cost_function,
         initial_point=initial_point,
-        max_iterations=10,
-        report_interval=1,
+        max_iterations=10,  # approx 26 s/it
+        report_interval=10,
     )
     print("done")
     assert so_solver
     iteration = so_solver.solve()
     print(f"s/it: {np.mean([i.duration for i in so_solver.iterations[1:]])}")
     numpy_cache[so_link_flow_key] = iteration.link_flow
+
+
+def test_least_cost_paths(pittsburgh_road_network, pittsburgh_demand):
+    cost = np.arange(pittsburgh_road_network.number_of_links()) + 1
+    ig = pittsburgh_road_network._igraph
+    _weight = pittsburgh_road_network.WEIGHT_KEY
+    ig.es[_weight] = cost
+    i = 70
+    _demand = pittsburgh_demand.demand[i]
+    s = ig['node_index'][_demand.origin.name]
+    t = ig['node_index'][_demand.destination.name]
+    c = ig.shortest_paths(s, t, weights=_weight)[0][0]
+    print(f"cost {s}->{t} = {c}")
+
+    adjdict = _igraph_to_numba_adjdict(ig)
+    weights = _igraph_to_numba_weights(ig, _weight)
+
+    paths = list(
+        _all_paths_shorter_than(
+            adjdict, s, t, weights, c, ig['index_node'], debug=True
+        ))
+
+    #max_i = 100
+    #demand = TravelDemand(pittsburgh_demand.demand[:max_i])
+    #demand = pittsburgh_demand
+    #n = len(demand)
+    #print(f"Running shortish paths with {n} of {len(pittsburgh_demand)} OD pairs.")
+    #t0 = time.time()
+    #paths = list(pittsburgh_road_network.least_cost_paths(demand, cost))
+    #t = time.time()-t0
+    #print(f"took {t:0.4f}s ({t/n:0.4f}s/od, {t/len(paths):0.4f}s/path).")
 
 
 def test_scipy_shortest_paths(pittsburgh_road_network, pittsburgh_demand):

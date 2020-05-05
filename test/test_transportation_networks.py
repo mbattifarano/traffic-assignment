@@ -577,6 +577,7 @@ def test_heuristic_fo_mcr(transportation_network, numpy_cache, pickle_cache):
     print(f"Best objective value {best_value} on iteration {best_i}")
     print(f"Lower bounds {lower_bounds}")
 
+
     return
     known_paths = mfcr.constants.known_paths
 

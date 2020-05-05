@@ -17,7 +17,7 @@ from .demand import TravelDemand
 from .link import Link
 from .node import Node
 from .path import Path
-from .shortest_path import single_source_dijkstra, all_paths_shorter_than
+from .shortest_path import single_source_dijkstra, all_paths_shorter_than, get_all_shortish_paths, _igraph_to_numba_weights, _igraph_to_numba_adjdict
 from .graph import shortest_paths_igraph, NX_ID, assign_all_to_links
 import numba
 
@@ -181,23 +181,41 @@ class RoadNetwork(Network):
     def least_cost_paths(self, demand: TravelDemand,
                          travel_costs: np.ndarray,
                          tolerance: float = 1e-3) -> Iterable[Tuple[Path, int]]:
-        self.set_link_costs(travel_costs)
-        for i, (orgn, dest, _) in enumerate(demand):
-            min_path_cost = nx.shortest_path_length(
-                self.graph,
-                source=orgn.name,
-                target=dest.name,
-                weight=self.WEIGHT_KEY,
-            )
-            shortest_paths = all_paths_shorter_than(
-                self.graph,
-                source=orgn.name,
-                target=dest.name,
-                weight=self.WEIGHT_KEY,
-                cutoff=min_path_cost * (1 + tolerance),
-            )
-            for path in shortest_paths:
-                yield Path(path), i
+        #self.set_link_costs(travel_costs)
+        self._igraph.es[self.WEIGHT_KEY] = travel_costs
+        _index_node = self._igraph['index_node']
+        _node_index = self._igraph['node_index']
+        # high cost step
+        cost_matrix = np.array(self._igraph.shortest_paths(weights=self.WEIGHT_KEY))
+        st_pairs = np.array([
+            [_node_index[d.origin.name], _node_index[d.destination.name]]
+            for d in demand
+        ], dtype=np.uint16)
+        adjdict = _igraph_to_numba_adjdict(self._igraph)
+        weights = _igraph_to_numba_weights(self._igraph, self.WEIGHT_KEY)
+        for path, i in get_all_shortish_paths(st_pairs, cost_matrix, adjdict,
+                                              weights, tolerance, _index_node):
+            yield Path(path), i
+
+        #for i, (orgn, dest, _) in enumerate(demand):
+        #    #min_path_cost = nx.shortest_path_length(
+        #    #    self.graph,
+        #    #    source=orgn.name,
+        #    #    target=dest.name,
+        #     #    weight=self.WEIGHT_KEY,
+        #     #)
+        #     s = _index_node[orgn.name]
+        #     t = _index_node[dest.name]
+        #     min_path_cost = cost_matrix[s, t]
+        #     shortest_paths = all_paths_shorter_than(
+        #         self.graph,
+        #         source=orgn.name,
+        #         target=dest.name,
+        #         weight=self.WEIGHT_KEY,
+        #         cutoff=min_path_cost * (1 + tolerance),
+        #     )
+        #     for path in shortest_paths:
+        #         yield Path(path), i
 
     def least_cost_path_indices(self, demand: TravelDemand,
                                 travel_costs: np.ndarray):

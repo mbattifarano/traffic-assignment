@@ -5,6 +5,9 @@ dijkstra to accept multiple target nodes.
 """
 from heapq import heappush, heappop
 from itertools import count
+import numba
+from numba.typed import List, Dict
+import numpy as np
 
 
 def _parent_children(graph, node):
@@ -13,8 +16,10 @@ def _parent_children(graph, node):
 
 def all_paths_shorter_than(graph, source, target, weight, cutoff):
     visited = [source]
+    # Replace _parent_children with list of lists/arrays
     stack = [_parent_children(graph, source)]
 
+    # replace with dict
     def cost_of(node):
         path = visited + [node]
         path_cost = sum(graph.edges[e][weight] for e in zip(path, path[1:]))
@@ -31,6 +36,149 @@ def all_paths_shorter_than(graph, source, target, weight, cutoff):
             elif child not in visited:
                 visited.append(child)
                 stack.append(_parent_children(graph, child))
+
+_index_t = numba.uint16
+
+
+def _igraph_to_numba_adjdict(graph):
+    d = numba.typed.Dict.empty(
+        key_type=_index_t,
+        value_type=numba.types.ListType(_index_t),
+    )
+    for idx in range(graph.vcount()):
+        children = numba.typed.List.empty_list(_index_t)
+        for n in graph.neighbors(idx, mode='OUT'):
+            children.append(n)
+        d[idx] = children
+    return d
+
+
+def _igraph_to_numba_weights(graph, weight_key):
+    d = numba.typed.Dict.empty(
+        key_type=numba.types.UniTuple(_index_t, 2),
+        value_type=numba.float64,
+    )
+    for e in list(graph.es):
+        d[(e.source, e.target)] = e[weight_key]
+    return d
+
+
+@numba.jit(nopython=True)
+def _cost_of(weights, visited, node):
+    cost = 0.0
+    for u, v in zip(visited, visited[1:]):
+        cost += weights[(u, v)]
+    cost += weights[(visited[-1], node)]
+    return cost
+
+
+@numba.jit(nopython=True)
+def _numba_parent_children(adjdict, parent):
+    return parent, iter(adjdict[parent])
+
+
+@numba.jit(nopython=True, nogil=True, debug=True)
+def _all_paths_shorter_than(adjdict, source, target, weights, cutoff, index_node,
+                            debug=False):
+    if debug:
+        print(source, target, cutoff)
+    visited = List()
+    visited_set = set()
+    costs = List()
+    stack = List()
+
+    visited.append(source)
+    visited_set.add(source)
+    costs.append(0.0)
+    stack.append((source, 0))
+
+    n_pruned = 0
+    n_explored = 0
+
+    iteration = 0
+    while stack:
+        iteration += 1
+        parent, child_i = stack.pop()
+        children = adjdict[parent]
+        if child_i >= len(children):
+            # we are done exploring this parent
+            n_explored += 1
+            visited.pop()
+            visited_set.remove(parent)
+            costs.pop()
+            print("explored node", parent)
+            print(iteration, len(visited), len(stack), n_explored, n_pruned)
+        else:
+            child = children[child_i]
+            # put the parent back on the stack and advance the iterator
+            stack.append((parent, child_i+1))
+            cost_so_far = costs[-1] + weights[(parent, child)]
+            if cost_so_far <= cutoff:
+                if child == target:
+                    out = List()
+                    for v in visited:
+                        out.append(index_node[v])
+                    out.append(index_node[target])
+                    print(iteration, "found path")
+                    yield out
+                elif child not in visited_set:
+                    visited.append(child)
+                    visited_set.add(child)
+                    costs.append(cost_so_far)
+                    stack.append((child, 0))
+            else:
+                n_pruned += 1
+
+
+#        if children:
+#            child = children.pop(0)
+#            edge_cost = weights[(parent, child)]
+#            cost_so_far = costs[-1] + edge_cost
+#            if cost_so_far <= cutoff:
+#                if child == target:
+#                    out = List()
+#                    for v in visited:
+#                        out.append(index_node[v])
+#                    out.append(index_node[target])
+#                    if debug:
+#                        print("found a path", source, target, cost_so_far)
+#                    yield out
+#                elif child not in visited:
+#                    visited.append(child)
+#                    costs.append(cost_so_far)
+#                    stack.append(child)
+#                    children_of[child] = adjdict[child].copy()
+#        else:  # no more children
+#            visited.pop()
+#            costs.pop()
+#            stack.pop()
+#            #if debug:
+#            # print("visited", visited)
+
+
+@numba.jit(nopython=True, nogil=True, parallel=True)
+def get_all_shortish_paths(st_pairs, cost_matrix, adjdict, weights, tolerance, index_node):
+    out = List()
+    is_open = np.zeros(len(st_pairs), dtype=np.uint8)
+    for i in numba.prange(len(st_pairs)):
+        is_open[i] = 1
+        s, t = st_pairs[i]
+        min_path_cost = cost_matrix[s, t]
+        cutoff = min_path_cost * (1.0 + tolerance)
+        paths = _all_paths_shorter_than(
+            adjdict,
+            s, t,
+            weights,
+            cutoff,
+            index_node,
+            False,  # debug if i = 9
+        )
+        for p in paths:
+            out.append((p, i))
+        is_open[i] = 0
+        open = is_open.nonzero()[0]
+        print("end", i, "open", len(open), '\n\t', open)
+    return out
 
 
 def single_source_dijkstra(G, source, targets=None, weight='weight'):

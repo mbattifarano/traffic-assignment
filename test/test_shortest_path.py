@@ -3,7 +3,10 @@ from hypothesis.strategies import builds, integers, lists, composite
 import networkx as nx
 import numpy as np
 
-from traffic_assignment.network.shortest_path import all_paths_shorter_than
+from traffic_assignment.network.shortest_path import all_paths_shorter_than, _all_paths_shorter_than, _igraph_to_numba_adjdict, _igraph_to_numba_weights, get_all_shortish_paths
+import igraph as ig
+import pytest
+from traffic_assignment.utils import Timer
 
 WEIGHT_KEY = 'weight'
 
@@ -87,3 +90,77 @@ def display_path(graph, path, weight_key):
         w = graph.edges[u,v][weight_key]
         path_strings.append(edge_format.format(w, v))
     return ''.join(path_strings)
+
+
+def test_igraph_shortest_paths_less_than():
+    g = ig.Graph(directed=True)
+    g.add_vertices(4)
+    #g.add_edges([
+    #    (0, 1),
+    #    (0, 2),
+    #    (1, 3),
+    #    (2, 3),
+    #    (1, 2),
+    #])
+    g.add_edge(0, 1, weight=1.0)
+    g.add_edge(0, 2, weight=3.0)
+    g.add_edge(1, 3, weight=1.0)
+    g.add_edge(2, 3, weight=1.0)
+    g.add_edge(1, 2, weight=1.0)
+    s = 0
+    t = 3
+    st_pairs = np.array([[s, t]])
+    weight_key = 'weight'
+    index_node = np.arange(4)
+    cost_matrix = np.array(g.shortest_paths(weights=weight_key))
+    #g.es[weight_key] = [1.0, 3.0, 1.0, 1.0, 1.0]
+    adjdict = _igraph_to_numba_adjdict(g)
+    weights = _igraph_to_numba_weights(g, weight_key)
+    cost = g.shortest_paths(s, t, weights=weight_key)[0][0]
+    assert cost == cost_matrix[s, t]
+    path = g.get_shortest_paths(s, t, weights=weight_key)[0]
+    assert cost == pytest.approx(2.0)
+    assert path == [0, 1, 3]
+    timer = Timer().start()
+    paths = [tuple(p)
+             for p in _all_paths_shorter_than(adjdict, s, t, weights, 2.0, index_node)]
+    print(timer.time_elapsed())
+    timer.start()
+    _paths = [tuple(p)
+              for p, i in get_all_shortish_paths(st_pairs, cost_matrix, adjdict,
+                                                 weights, 0.0, index_node)]
+    print(timer.time_elapsed())
+    assert len(paths) == 1
+    assert (0, 1, 3) in paths
+    assert paths == _paths
+
+    timer.start()
+    paths = [tuple(p)
+             for p in _all_paths_shorter_than(adjdict, s, t, weights, 3.0, index_node)]
+    print(timer.time_elapsed())
+    timer.start()
+    _paths = [tuple(p)
+              for p, i in get_all_shortish_paths(st_pairs, cost_matrix, adjdict,
+                                                 weights, 0.5, index_node)]
+    print(timer.time_elapsed())
+    assert len(paths) == 2
+    assert (0, 1, 3) in paths
+    assert (0, 1, 2, 3) in paths
+    assert paths == _paths
+
+    timer.start()
+    paths = [tuple(p)
+             for p in _all_paths_shorter_than(adjdict, s, t, weights, 4.0, index_node)]
+    print(timer.time_elapsed())
+    timer.start()
+    _paths = [tuple(p)
+              for p, i in get_all_shortish_paths(st_pairs, cost_matrix, adjdict,
+                                                 weights, 1.0, index_node)]
+
+    print(timer.time_elapsed())
+    assert len(paths) == 3
+    assert (0, 1, 3) in paths
+    assert (0, 1, 2, 3) in paths
+    assert (0, 2, 3) in paths
+    assert paths == _paths
+
