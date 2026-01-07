@@ -1,5 +1,5 @@
 numpy==1.17.1
 networkx==2.3
 toolz==0.10.0
-marshmallow==3.2.0
+marshmallow==3.26.2
 cvxpy==1.0.25
